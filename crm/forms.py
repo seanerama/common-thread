@@ -36,3 +36,50 @@ class ContextNoteForm(VersionForm):
         strip=False,
         help_text="Where did this context come from? Label any inference as your own.",
     )
+
+
+class RelationshipCreateForm(forms.Form):
+    from_party_id = forms.ChoiceField(label="From party")
+    to_party_id = forms.ChoiceField(label="To party")
+    kind = forms.CharField(
+        max_length=80,
+        help_text="For example: employment, household_member, referral or other.",
+    )
+    role = forms.CharField(required=False)
+    starts_on = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+    ends_on = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+
+    def __init__(self, *args, from_parties=(), to_parties=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        from_choices = [
+            (str(party.id), f"{party.display_name} ({party.kind})")
+            for party in from_parties
+        ]
+        to_choices = [
+            (str(party.id), f"{party.display_name} ({party.kind})")
+            for party in to_parties
+        ]
+        self.fields["from_party_id"].choices = from_choices
+        self.fields["to_party_id"].choices = to_choices
+
+
+class RelationshipForm(VersionForm):
+    kind = forms.CharField(
+        max_length=80,
+        help_text="For example: employment, household_member, referral or other.",
+    )
+    role = forms.CharField(required=False)
+    starts_on = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+    ends_on = forms.DateField(
+        required=False, widget=forms.DateInput(attrs={"type": "date"})
+    )
+
+
+class RelationshipCloseForm(VersionForm):
+    ends_on = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))

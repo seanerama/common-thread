@@ -187,3 +187,29 @@ organization and household. After application replacement or database restore, u
 and run with `--party-directory off` to prove navigation and direct routes are hidden
 without deleting data; then reenable, recreate, and reread the records. This flag is
 independent of people management and context notes.
+
+## Stage 4 relationship acceptance
+
+`RELATIONSHIPS_ENABLED` defaults to `false` in the application, Compose, and the
+example environment. Set it to `true` in the external environment file, run the
+one-shot migration from the exact tested image, and recreate the application
+container. Disabling and recreating the app hides relationship controls, panels,
+and direct routes without deleting relationship history.
+
+With operator smoke credentials exported, run:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --party-directory on --relationships on \
+  --record-file /tmp/relationship-proof.json
+```
+
+The smoke connects a fictional person to a company and household, closes one
+employment, creates a later employment without replacing the old record, and reads
+the relationships from both endpoints. After application replacement or database
+restore, use `--read-file` with the same proof file. To prove the relationship flag
+is independent of the directory, disable `PARTY_DIRECTORY_ENABLED`, recreate the
+app, and read the proof with `--party-directory off --relationships on`; endpoint
+labels and relationship details remain readable while directory routes and links
+stay hidden. Also cycle `--relationships off` and back on to prove the controls and
+routes are hidden while the records persist.

@@ -183,7 +183,9 @@ def notes_off(page, base_url, record):
 
 
 def party_directory_read(page, base_url, record):
-    for key in ("organization", "household"):
+    for key in ("organization", "second_organization", "household"):
+        if key not in record:
+            continue
         party = record[key]
         response = page.goto(base_url + party["path"])
         assert response.status == 200
@@ -247,8 +249,152 @@ def party_directory_off(page, base_url, record):
         expect(page.get_by_role("link", name=name, exact=True)).to_have_count(0)
     paths = ["/organizations/", "/households/"]
     paths.extend(
-        record[key]["path"] for key in ("organization", "household") if key in record
+        record[key]["path"]
+        for key in ("organization", "second_organization", "household")
+        if key in record
     )
+    for path in paths:
+        response = page.goto(base_url + path)
+        assert response.status == 404
+    page.goto(base_url + record["path"])
+
+
+def _party_id(path):
+    return path.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _create_relationship(page, base_url, from_path, to_path, kind, role, starts_on):
+    page.goto(f"{base_url}/relationships/new/")
+    page.locator('[name="from_party_id"]').select_option(_party_id(from_path))
+    page.locator('[name="to_party_id"]').select_option(_party_id(to_path))
+    page.locator('[name="kind"]').fill(kind)
+    page.locator('[name="role"]').fill(role)
+    page.locator('[name="starts_on"]').fill(starts_on)
+    page.get_by_role("button", name="Save relationship", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/relationships/[0-9a-f-]+/")
+    )
+    return page.url.removeprefix(base_url)
+
+
+def relationships_read(page, base_url, record, party_directory):
+    relationships = record["relationships"]
+    for relationship in relationships.values():
+        response = page.goto(base_url + relationship["path"])
+        assert response.status == 200
+        expect(
+            page.locator("p")
+            .filter(has_text=relationship["from_name"])
+            .filter(has_text=relationship["to_name"])
+        ).to_be_visible()
+        expect(page.get_by_text(relationship["role"], exact=False)).to_be_visible()
+        if party_directory == "off":
+            for endpoint_path in relationship["directory_paths"]:
+                expect(page.locator(f'a[href="{endpoint_path}"]')).to_have_count(0)
+
+    # Both the ended employment and its replacement remain visible together.
+    page.goto(base_url + record["path"])
+    for relationship in relationships.values():
+        expect(page.get_by_text(relationship["role"], exact=False)).to_be_visible()
+    if party_directory == "on":
+        endpoint_roles = (
+            ("organization", relationships["ended_employment"]["role"]),
+            ("second_organization", relationships["current_employment"]["role"]),
+            ("household", relationships["household_membership"]["role"]),
+        )
+        for key, role in endpoint_roles:
+            party = record[key]
+            response = page.goto(base_url + party["path"])
+            assert response.status == 200
+            expect(page.get_by_text(role, exact=False)).to_be_visible()
+
+
+def relationships_on(page, base_url, record, read_only, party_directory):
+    if read_only:
+        relationships_read(page, base_url, record, party_directory)
+        return
+
+    second_name = f"Fictional Organization {uuid4().hex[:10]}"
+    page.goto(f"{base_url}/organizations/new/")
+    page.locator('[name="display_name"]').fill(second_name)
+    page.get_by_role("button", name="Save organization", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/organizations/[0-9a-f-]+/")
+    )
+    record["second_organization"] = {
+        "path": page.url.removeprefix(base_url),
+        "display_name": second_name,
+    }
+
+    old_role = "Fictional former advisor"
+    current_role = "Fictional current advisor"
+    household_role = "Fictional household member"
+    old_path = _create_relationship(
+        page,
+        base_url,
+        record["path"],
+        record["organization"]["path"],
+        "employment",
+        old_role,
+        "2024-01-01",
+    )
+    page.locator('form[action$="/close/"] [name="ends_on"]').fill("2024-12-31")
+    page.get_by_role("button", name="Close relationship", exact=True).click()
+    expect(page).to_have_url(base_url + old_path)
+    current_path = _create_relationship(
+        page,
+        base_url,
+        record["path"],
+        record["second_organization"]["path"],
+        "employment",
+        current_role,
+        "2025-01-01",
+    )
+    household_path = _create_relationship(
+        page,
+        base_url,
+        record["path"],
+        record["household"]["path"],
+        "household_member",
+        household_role,
+        "2024-06-01",
+    )
+    record["relationships"] = {
+        "ended_employment": {
+            "path": old_path,
+            "from_name": record["display_name"],
+            "to_name": record["organization"]["display_name"],
+            "role": old_role,
+            "directory_paths": [record["organization"]["path"]],
+        },
+        "current_employment": {
+            "path": current_path,
+            "from_name": record["display_name"],
+            "to_name": second_name,
+            "role": current_role,
+            "directory_paths": [record["second_organization"]["path"]],
+        },
+        "household_membership": {
+            "path": household_path,
+            "from_name": record["display_name"],
+            "to_name": record["household"]["display_name"],
+            "role": household_role,
+            "directory_paths": [record["household"]["path"]],
+        },
+    }
+    relationships_read(page, base_url, record, party_directory)
+
+
+def relationships_off(page, base_url, record):
+    expect(page.get_by_role("heading", name="Relationships", exact=True)).to_have_count(
+        0
+    )
+    expect(page.get_by_role("link", name="Add relationship", exact=True)).to_have_count(
+        0
+    )
+    paths = ["/relationships/new/"]
+    if "relationships" in record:
+        paths.extend(item["path"] for item in record["relationships"].values())
     for path in paths:
         response = page.goto(base_url + path)
         assert response.status == 404
@@ -264,6 +410,7 @@ def smoke(
     people_management="off",
     context_notes="off",
     party_directory="off",
+    relationships="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -327,11 +474,18 @@ def smoke(
                 party_directory_on(page, base_url, record, bool(read_file))
             else:
                 party_directory_off(page, base_url, record)
+            if relationships == "on":
+                relationships_on(
+                    page, base_url, record, bool(read_file), party_directory
+                )
+            else:
+                relationships_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
             print(
                 f"Browser smoke passed: people management {people_management}; "
-                f"context notes {context_notes}; party directory {party_directory}"
+                f"context notes {context_notes}; party directory {party_directory}; "
+                f"relationships {relationships}"
             )
         finally:
             browser.close()
@@ -348,6 +502,7 @@ def main():
     )
     parser.add_argument("--context-notes", choices=("on", "off"), default="off")
     parser.add_argument("--party-directory", choices=("on", "off"), default="off")
+    parser.add_argument("--relationships", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -361,6 +516,7 @@ def main():
         args.people_management,
         args.context_notes,
         args.party_directory,
+        args.relationships,
     )
 
 

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Relationship</h1>
+<p><strong>Direction:</strong>
+{% if party_directory_enabled and relationship.from_party.kind == "organization" %}<a href="/organizations/{{ relationship.from_party.id }}/">{{ relationship.from_party.display_name }}</a>{% elif party_directory_enabled and relationship.from_party.kind == "household" %}<a href="/households/{{ relationship.from_party.id }}/">{{ relationship.from_party.display_name }}</a>{% elif relationship.from_party.kind == "person" %}<a href="/people/{{ relationship.from_party.id }}/">{{ relationship.from_party.display_name }}</a>{% else %}{{ relationship.from_party.display_name }}{% endif %}
+→
+{% if party_directory_enabled and relationship.to_party.kind == "organization" %}<a href="/organizations/{{ relationship.to_party.id }}/">{{ relationship.to_party.display_name }}</a>{% elif party_directory_enabled and relationship.to_party.kind == "household" %}<a href="/households/{{ relationship.to_party.id }}/">{{ relationship.to_party.display_name }}</a>{% elif relationship.to_party.kind == "person" %}<a href="/people/{{ relationship.to_party.id }}/">{{ relationship.to_party.display_name }}</a>{% else %}{{ relationship.to_party.display_name }}{% endif %}
+</p>
+<p><strong>Kind:</strong> {{ relationship.kind }}</p>
+<p><strong>Role:</strong> {{ relationship.role|default:"None" }}</p>
+<p><strong>Starts:</strong> {{ relationship.starts_on|default:"Unbounded" }}</p>
+<p><strong>Ends:</strong> {{ relationship.ends_on|default:"Unbounded" }}</p>
+<p>Version {{ relationship.version }}</p>
+<p><a href="/relationships/{{ relationship.id }}/edit/">Correct relationship</a></p>
+<form method="post" action="/relationships/{{ relationship.id }}/close/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ relationship.version }}"><label for="close-date">End date</label><input id="close-date" type="date" name="ends_on" required><button type="submit">Close relationship</button></form>
+{% endblock %}

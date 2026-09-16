@@ -31,5 +31,6 @@
 <a href="/people/{{ person.id }}/notes/{{ note.id }}/history/">Note history</a>
 </article>{% empty %}<p>No context notes yet.</p>{% endfor %}
 {% endif %}
+{% if relationships_enabled %}{% include "relationship_panels.html" %}{% endif %}
 <p><a href="/people/">Back to people</a></p>
 {% endblock %}
