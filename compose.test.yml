@@ -1,0 +1,4 @@
+services:
+  app:
+    ports:
+      - "127.0.0.1:${TEST_HTTP_PORT:-18010}:8000"

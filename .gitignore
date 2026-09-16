@@ -10,3 +10,10 @@ dist/
 # Per-app deployment access (host + credential locations) — shared out-of-band,
 # never committed. The committed pointer (.verity/deploy-access.README.md) stays.
 .verity/deploy-access.md
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+staticfiles/
+!.env.example

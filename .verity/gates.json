@@ -1,9 +1,16 @@
 {
   "schema": 1,
   "gates": [
-    {
-      "name": "repository-hygiene",
-      "command": "node .verity/check-hygiene.cjs"
-    }
+    {"name": "repository-hygiene", "command": "node .verity/check-hygiene.cjs"},
+    {"name": "locked-dependencies", "command": "uv sync --frozen"},
+    {"name": "format", "command": "uv run ruff format --check ."},
+    {"name": "lint", "command": "uv run ruff check ."},
+    {"name": "django-check", "command": "uv run python manage.py check"},
+    {"name": "migration-drift", "command": "uv run python manage.py makemigrations --check --dry-run"},
+    {"name": "migrations", "command": "uv run python manage.py migrate --noinput"},
+    {"name": "postgres-integration", "command": "uv run pytest -m 'not browser'"},
+    {"name": "real-browser", "command": "bash scripts/browser-gate.sh"},
+    {"name": "container-amd64", "command": "bash scripts/container-gate.sh amd64"},
+    {"name": "container-arm64", "command": "bash scripts/container-gate.sh arm64"}
   ]
 }

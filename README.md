@@ -12,8 +12,9 @@ product, not three separate products or a real-estate system with extra fields.
 
 ## Project status
 
-Started September 15, 2026. Product and architecture planning only; no application,
-database, integration, or deployment has been implemented.
+Started September 15, 2026. The Stage 0 implementation supplies operator-provisioned
+private workspaces, login, and persistent person creation/read in Django and PostgreSQL.
+See [STATUS](STATUS.md) for observed CI and deployment evidence.
 
 - [Coding agent handoff — start here](CODING_AGENT_HANDOFF.md)
 - [Product brief and first milestone](docs/product-brief.md)
@@ -30,12 +31,24 @@ See the [Architect handoff](docs/architect-handoff.md) for ADRs, frozen core
 contracts, and the walking-skeleton definition. External integration contracts
 remain deferred.
 
-## Repository hygiene
+## Development and verification
 
-Run `node .verity/run-gates.cjs` to validate the locked identity, required files,
-and local documentation links. CI also scans Git history for secrets with Gitleaks.
-These checks cover repository hygiene only; application tests will be added when
-implementation begins.
+Use Python 3.13, uv, Docker Compose, and real PostgreSQL 17. Install with
+`uv sync --frozen`, provide `DATABASE_URL` and `DJANGO_SECRET_KEY` in your shell,
+and run `uv run python manage.py migrate`. Provision a private owner with
+`COMMON_THREAD_PASSWORD` supplied securely to
+`uv run python manage.py provision_user --username <name> --workspace <name>`.
+Existing passwords and memberships are preserved on repeated provisioning.
+Run `uv run python manage.py runserver` for localhost development.
+
+Install the browser with `uv run playwright install --with-deps chromium`.
+`node .verity/run-gates.cjs` runs hygiene, locked installation, lint/format,
+Django and migration checks, PostgreSQL integration, real browser, and amd64/arm64
+container persistence/restore gates. Docker and browser dependencies are required;
+missing gates fail. CI additionally scans Git history with Gitleaks.
+
+See [the deployment runbook](docs/runbooks/deployment.md) for portable containers,
+private testing-host deployment, operator smoke, backup, restore, and rollback.
 
 The [initial backlog](docs/handoff/initial-backlog.md) links the stage specifications
 and GitHub work items for Verity Build, starting with Stage 0.

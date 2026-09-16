@@ -1,0 +1,14 @@
+[project]
+name = "common-thread"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = ["Django>=5.2,<5.3", "psycopg[binary]>=3.2,<4", "gunicorn>=23,<26", "dj-database-url>=3,<4", "whitenoise>=6,<7"]
+[dependency-groups]
+dev = ["ruff", "pytest", "pytest-django", "playwright"]
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "common_thread.settings"
+markers = ["browser: real Chromium browser integration"]
+[tool.ruff]
+exclude = ["crm/migrations"]
+[tool.ruff.lint]
+select = ["E", "F", "I"]

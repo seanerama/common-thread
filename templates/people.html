@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block content %}<h1>People</h1><a href="/people/new/">Add person</a><ul>{% for person in people %}<li><a href="/people/{{ person.id }}/">{{ person.display_name }}</a></li>{% empty %}<li>No people yet. Add someone to get started.</li>{% endfor %}</ul>{% endblock %}

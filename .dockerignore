@@ -1,0 +1,17 @@
+*
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!manage.py
+!common_thread/
+!common_thread/**
+!crm/
+!crm/**
+**/__pycache__
+**/*.pyc
+!templates/
+!templates/**
+!static/
+!static/**
+!scripts/
+!scripts/gunicorn.conf.py
