@@ -1,0 +1,43 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+  packages: read
+jobs:
+  verify-release-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve the CI-tested multi-architecture image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+        run: |
+          image="${IMAGE,,}"
+          for attempt in $(seq 1 30); do
+            if docker buildx imagetools inspect "$image" > artifact-digests.txt; then
+              break
+            fi
+            sleep 10
+          done
+          test -s artifact-digests.txt
+          docker buildx imagetools inspect --raw "$image" > image-index.json
+          test "$(jq '[.manifests[] | select(.platform.os == "linux" and (.platform.architecture == "amd64" or .platform.architecture == "arm64"))] | length' image-index.json)" = 2
+      - name: Scan both release manifests
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TRIVY_IMAGE: aquasec/trivy:0.67.2@sha256:e2b22eac59c02003d8749f5b8d9bd073b62e30fefaef5b7c8371204e0a4b0c08
+        run: |
+          image="${IMAGE,,}"
+          for arch in amd64 arm64; do
+            digest="$(jq -r --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' image-index.json)"
+            test "$(printf '%s' "$digest" | grep -Ec '^sha256:[0-9a-f]{64}$')" = 1
+            docker run --rm "$TRIVY_IMAGE" image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "$image@$digest"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-image-digests
+          path: artifact-digests.txt
+          if-no-files-found: error
