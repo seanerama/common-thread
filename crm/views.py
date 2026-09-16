@@ -16,6 +16,8 @@ from django.views.decorators.http import require_http_methods
 
 from . import services
 from .forms import (
+    CommitmentCreateForm,
+    CommitmentForm,
     ContactPointForm,
     InteractionCreateForm,
     InteractionForm,
@@ -247,11 +249,14 @@ def person_detail(request, person_id):
         context["notes"] = services.list_context_notes(request.user, person_id)
     context["relationships_enabled"] = settings.RELATIONSHIPS_ENABLED
     context["interactions_enabled"] = settings.INTERACTIONS_ENABLED
+    context["commitments_enabled"] = settings.COMMITMENTS_ENABLED
     allowed_query = set()
     if settings.RELATIONSHIPS_ENABLED:
         allowed_query.update({"relationships_page", "relationships_ended_page"})
     if settings.INTERACTIONS_ENABLED:
         allowed_query.add("interactions_page")
+    if settings.COMMITMENTS_ENABLED:
+        allowed_query.update({"commitments_page", "commitments_status"})
     if set(request.GET) - allowed_query or any(
         len(request.GET.getlist(key)) != 1 for key in request.GET
     ):
@@ -277,6 +282,19 @@ def person_detail(request, person_id):
             )
         except ValidationError:
             return HttpResponse("Invalid interaction page", status=400)
+    if settings.COMMITMENTS_ENABLED:
+        try:
+            context["commitments_status"] = request.GET.get(
+                "commitments_status", "open"
+            )
+            context["commitments"] = services.commitment_panels(
+                request.user,
+                person_id,
+                context["commitments_status"],
+                request.GET.get("commitments_page", "1"),
+            )
+        except ValidationError:
+            return HttpResponse("Invalid commitment page", status=400)
     return render(request, "person_detail.html", context)
 
 
@@ -617,6 +635,7 @@ def party_detail(request, kind, party_id):
         "singular_lower": singular.lower(),
         "relationships_enabled": settings.RELATIONSHIPS_ENABLED,
         "interactions_enabled": settings.INTERACTIONS_ENABLED,
+        "commitments_enabled": False,
     }
     allowed_query = set()
     if settings.RELATIONSHIPS_ENABLED:
@@ -1162,4 +1181,353 @@ def interaction_history(request, interaction_id):
             "interaction": interaction,
             "revisions": services.interaction_history(request.user, interaction_id),
         },
+    )
+
+
+def commitments_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.COMMITMENTS_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _commitment_selectors(request, commitment=None):
+    keys = {
+        "owed_by_q",
+        "owed_by_page",
+        "owed_by_selected",
+        "owed_to_q",
+        "owed_to_page",
+        "owed_to_selected",
+        "people_q",
+        "people_page",
+        "person_selected",
+    }
+    if settings.INTERACTIONS_ENABLED:
+        keys.update({"source_q", "source_page", "source_selected"})
+    if set(request.GET) - keys or any(
+        key != "person_selected" and len(request.GET.getlist(key)) != 1
+        for key in request.GET
+    ):
+        raise ValidationError("Invalid selector query")
+    current_people = services.commitment_people(commitment) if commitment else []
+    current_person_ids = {person.id for person in current_people}
+    raw_people = (
+        request.GET.getlist("person_selected")
+        if "person_selected" in request.GET
+        else [str(person.id) for person in current_people]
+    )
+    selected_people = services.commitment_selected_people(
+        request.user, raw_people, current_person_ids
+    )
+    people_page = services.commitment_person_selector(
+        request.user,
+        request.GET.get("people_q", ""),
+        request.GET.get("people_page", "1"),
+    )
+
+    def selected_party(key, current):
+        value = request.GET.get(key) or (str(current.id) if current else None)
+        return (
+            services.commitment_selected_party(
+                request.user, value, current.id if current else None
+            )
+            if value
+            else None
+        )
+
+    owed_by = selected_party(
+        "owed_by_selected", commitment.owed_by if commitment else None
+    )
+    owed_to = selected_party(
+        "owed_to_selected", commitment.owed_to if commitment else None
+    )
+    owed_by_page = services.relationship_selector(
+        request.user,
+        request.GET.get("owed_by_q", ""),
+        request.GET.get("owed_by_page", "1"),
+    )
+    owed_to_page = services.relationship_selector(
+        request.user,
+        request.GET.get("owed_to_q", ""),
+        request.GET.get("owed_to_page", "1"),
+    )
+    source_page = None
+    selected_source = None
+    if settings.INTERACTIONS_ENABLED:
+        source_page = services.commitment_source_selector(
+            request.user,
+            request.GET.get("source_q", ""),
+            request.GET.get("source_page", "1"),
+        )
+        source_value = request.GET.get("source_selected") or (
+            str(commitment.source_interaction_id)
+            if commitment and commitment.source_interaction_id
+            else None
+        )
+        if source_value:
+            try:
+                selected_source = services.get_interaction(request.user, source_value)
+            except Http404:
+                raise ValidationError("Invalid source") from None
+    return {
+        "owed_by_page": owed_by_page,
+        "owed_to_page": owed_to_page,
+        "people_page": people_page,
+        "source_page": source_page,
+        "selected_owed_by": owed_by,
+        "selected_owed_to": owed_to,
+        "selected_people": selected_people,
+        "selected_source": selected_source,
+    }
+
+
+def _commitment_form(request, commitment=None):
+    editing = commitment is not None
+    allowed = {
+        "description",
+        "owed_by_party_id",
+        "owed_to_party_id",
+        "due_on",
+        "person_ids",
+    }
+    if settings.INTERACTIONS_ENABLED:
+        allowed.add("source_interaction_id")
+    elif editing and commitment.source_interaction_id:
+        allowed.add("clear_source_interaction")
+    if editing:
+        allowed.add("expected_version")
+    if request.method == "POST" and (
+        set(request.POST) - (allowed | {"csrfmiddlewaretoken"})
+        or any(
+            key != "person_ids" and len(request.POST.getlist(key)) != 1
+            for key in request.POST
+        )
+    ):
+        return HttpResponse("Invalid request", status=400)
+    try:
+        selectors = _commitment_selectors(request, commitment)
+        if request.method == "POST":
+            submitted_by = services.commitment_selected_party(
+                request.user,
+                request.POST.get("owed_by_party_id"),
+                commitment.owed_by_id if commitment else None,
+            )
+            submitted_to = services.commitment_selected_party(
+                request.user,
+                request.POST.get("owed_to_party_id"),
+                commitment.owed_to_id if commitment else None,
+            )
+            submitted_people = services.commitment_selected_people(
+                request.user,
+                request.POST.getlist("person_ids"),
+                {person.id for person in services.commitment_people(commitment)}
+                if commitment
+                else (),
+            )
+            selectors["selected_owed_by"] = submitted_by
+            selectors["selected_owed_to"] = submitted_to
+            selectors["selected_people"] = submitted_people
+            if settings.INTERACTIONS_ENABLED and request.POST.get(
+                "source_interaction_id"
+            ):
+                selectors["selected_source"] = services.get_interaction(
+                    request.user, request.POST["source_interaction_id"]
+                )
+    except (ValidationError, Http404):
+        return HttpResponse("Invalid related record", status=400)
+
+    def unique_rows(selected, page):
+        rows = []
+        seen = set()
+        for row in ([selected] if selected else []) + list(page):
+            if row.id not in seen:
+                rows.append(row)
+                seen.add(row.id)
+        return rows
+
+    form_class = CommitmentForm if editing else CommitmentCreateForm
+    initial = {}
+    if commitment:
+        initial = {
+            "description": commitment.description,
+            "owed_by_party_id": str(commitment.owed_by_id),
+            "owed_to_party_id": str(commitment.owed_to_id),
+            "due_on": commitment.due_on,
+            "person_ids": [str(person.id) for person in selectors["selected_people"]],
+            "source_interaction_id": str(commitment.source_interaction_id or ""),
+            "expected_version": commitment.version,
+        }
+    form = form_class(
+        request.POST if request.method == "POST" else None,
+        initial=initial,
+        owed_by_parties=unique_rows(
+            selectors["selected_owed_by"], selectors["owed_by_page"]
+        ),
+        owed_to_parties=unique_rows(
+            selectors["selected_owed_to"], selectors["owed_to_page"]
+        ),
+        people=selectors["people_page"],
+        selected_people=selectors["selected_people"],
+        interactions=selectors["source_page"] or (),
+        selected_source=selectors["selected_source"],
+        source_enabled=settings.INTERACTIONS_ENABLED,
+        can_clear_hidden_source=bool(commitment and commitment.source_interaction_id),
+    )
+    status = 200
+    conflict = False
+    if request.method == "POST" and form.is_valid():
+        data = form.cleaned_data.copy()
+        if settings.INTERACTIONS_ENABLED:
+            data["source_interaction_id"] = data.get("source_interaction_id") or None
+        elif data.pop("clear_source_interaction", False):
+            data["source_interaction_id"] = None
+        else:
+            data["source_interaction_id"] = services.UNSET if editing else None
+        data["interactions_enabled"] = settings.INTERACTIONS_ENABLED
+        try:
+            saved = (
+                services.update_commitment(request.user, commitment.id, **data)
+                if commitment
+                else services.create_commitment(request.user, **data)
+            )
+        except services.Conflict:
+            status, conflict = 409, True
+            form.add_error(
+                None,
+                "This commitment changed. Reload and review the latest version before "
+                "saving again. Your submitted values are shown below.",
+            )
+        except ValidationError as exc:
+            if any(
+                field in exc.message_dict
+                for field in (
+                    "party",
+                    "person_ids",
+                    "owed_by_party_id",
+                    "owed_to_party_id",
+                    "source_interaction_id",
+                )
+            ):
+                return HttpResponse("Invalid related record", status=400)
+            for field, messages in exc.message_dict.items():
+                form.add_error(field if field in form.fields else None, messages)
+        else:
+            return redirect303(f"/commitments/{saved.id}/")
+    return render(
+        request,
+        "commitment_form.html",
+        {
+            **selectors,
+            "form": form,
+            "commitment": commitment,
+            "title": "Edit commitment" if commitment else "Add commitment",
+            "conflict": conflict,
+            "cancel_path": f"/commitments/{commitment.id}/"
+            if commitment
+            else "/commitments/",
+        },
+        status=status,
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@commitments_enabled
+def commitment_list(request):
+    if set(request.GET) - {"status", "due", "page"} or any(
+        len(request.GET.getlist(key)) != 1 for key in request.GET
+    ):
+        return HttpResponse("Invalid commitment query", status=400)
+    status = request.GET.get("status", "open")
+    due = request.GET.get("due", "all")
+    try:
+        page = services.list_commitments(
+            request.user, status, due, request.GET.get("page", "1")
+        )
+    except ValidationError:
+        return HttpResponse("Invalid commitment query", status=400)
+    return render(
+        request,
+        "commitment_list.html",
+        {
+            "commitments": page,
+            "page_obj": page,
+            "status_filter": status,
+            "due_filter": due,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@commitments_enabled
+def commitment_new(request):
+    return _commitment_form(request)
+
+
+@require_http_methods(["GET"])
+@authorized
+@commitments_enabled
+def commitment_detail(request, commitment_id):
+    commitment = services.get_commitment(request.user, commitment_id)
+    return render(
+        request,
+        "commitment_detail.html",
+        {
+            "commitment": commitment,
+            "people": services.commitment_people(commitment),
+            "show_source": settings.INTERACTIONS_ENABLED,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@commitments_enabled
+def commitment_edit(request, commitment_id):
+    return _commitment_form(
+        request, services.get_commitment(request.user, commitment_id)
+    )
+
+
+@require_http_methods(["POST"])
+@authorized
+@commitments_enabled
+def commitment_state(request, commitment_id, completed):
+    commitment = services.get_commitment(request.user, commitment_id)
+    if not _strict_form_post(request, {"expected_version"}):
+        return HttpResponse("Invalid request", status=400)
+    form = VersionForm(request.POST)
+    state_error = None
+    conflict = False
+    if form.is_valid():
+        try:
+            saved = services.set_commitment_completed(
+                request.user,
+                commitment_id,
+                form.cleaned_data["expected_version"],
+                completed,
+            )
+        except services.Conflict:
+            conflict = True
+        except ValidationError as exc:
+            state_error = exc.messages[0]
+        else:
+            return redirect303(f"/commitments/{saved.id}/")
+    commitment.refresh_from_db()
+    return render(
+        request,
+        "commitment_detail.html",
+        {
+            "commitment": commitment,
+            "people": services.commitment_people(commitment),
+            "show_source": settings.INTERACTIONS_ENABLED,
+            "state_error": state_error,
+            "state_conflict": conflict,
+        },
+        status=409 if conflict else 200,
     )

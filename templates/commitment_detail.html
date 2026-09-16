@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Commitment</h1>
+{% if state_error %}<div class="error" role="alert">{{ state_error }}</div>{% endif %}{% if state_conflict %}<div class="error" role="alert">This commitment changed. Reload and review the latest version.</div>{% endif %}
+<div style="white-space: pre-wrap">{{ commitment.description }}</div>
+<p>{{ commitment.owed_by.display_name }} owes {{ commitment.owed_to.display_name }} · Status {{ commitment.status }}{% if commitment.due_on %} · Due {{ commitment.due_on }} UTC date{% else %} · No due date{% endif %}</p>
+<p>Created by {{ commitment.created_by.username }} · Version {{ commitment.version }}{% if commitment.completed_at %} · Completed {{ commitment.completed_at }}{% endif %}</p>
+<h2>Linked people</h2><ul>{% for person in people %}<li><a href="/people/{{ person.id }}/">{{ person.display_name }}</a>{% if person.archived_at %} (archived){% endif %}</li>{% endfor %}</ul>
+{% if show_source and commitment.source_interaction_id %}<p><a href="/interactions/{{ commitment.source_interaction_id }}/">View source interaction</a></p>{% endif %}
+<p><a href="/commitments/{{ commitment.id }}/edit/">Edit commitment</a></p>
+{% if commitment.status == "open" %}<form method="post" action="/commitments/{{ commitment.id }}/complete/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ commitment.version }}"><button type="submit">Complete commitment</button></form>{% else %}<form method="post" action="/commitments/{{ commitment.id }}/reopen/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ commitment.version }}"><button type="submit">Reopen commitment</button></form>{% endif %}
+<p><a href="/commitments/">Back to commitments</a></p>
+{% endblock %}

@@ -793,6 +793,405 @@ def interaction_panels(user, party_id, page="1"):
     )
 
 
+UNSET = object()
+
+
+def _positive_page(value, paginator):
+    from django.core.paginator import Page
+
+    if (
+        not str(value).isascii()
+        or not str(value).isdecimal()
+        or not str(value).strip("0")
+    ):
+        raise ValidationError({"page": ["Enter a positive page number."]})
+    digits = str(value).lstrip("0")
+    number = int(digits) if len(digits) < 20 else paginator.num_pages + 1
+    return (
+        Page([], number, paginator)
+        if number > paginator.num_pages
+        else paginator.page(number)
+    )
+
+
+def commitment_person_selector(user, q="", page="1"):
+    from django.core.paginator import Paginator
+
+    if not isinstance(q, str) or len(q) > 200 or invalid_text(q):
+        raise ValidationError({"query": ["Invalid selector search."]})
+    rows = Party.objects.filter(
+        workspace=workspace_for(user),
+        kind="person",
+        person__isnull=False,
+        archived_at__isnull=True,
+    )
+    if q:
+        rows = rows.filter(display_name__icontains=q)
+    return _positive_page(page, Paginator(rows.order_by("display_name", "id"), 50))
+
+
+def commitment_selected_party(user, value, retainable_id=None):
+    party_id = _uuid(value, "party")
+    try:
+        party = Party.objects.get(id=party_id, workspace=workspace_for(user))
+    except Party.DoesNotExist:
+        raise ValidationError({"party": ["Select a valid party."]}) from None
+    if party.archived_at is not None and party.id != retainable_id:
+        raise ValidationError({"party": ["Select an active party."]})
+    return party
+
+
+def commitment_selected_people(user, values, retainable_ids=()):
+    ids = _commitment_person_ids(values) if values else []
+    retainable = set(retainable_ids)
+    people = list(
+        Party.objects.filter(
+            workspace=workspace_for(user),
+            id__in=ids,
+            kind="person",
+            person__isnull=False,
+        )
+    )
+    if len(people) != len(ids) or any(
+        person.archived_at is not None and person.id not in retainable
+        for person in people
+    ):
+        raise ValidationError({"person_ids": ["Select valid active people."]})
+    by_id = {person.id: person for person in people}
+    return [by_id[person_id] for person_id in ids]
+
+
+def commitment_source_selector(user, q="", page="1"):
+    from django.core.paginator import Paginator
+
+    if not isinstance(q, str) or len(q) > 200 or invalid_text(q):
+        raise ValidationError({"query": ["Invalid source selector search."]})
+    from .models import Interaction
+
+    rows = Interaction.objects.filter(
+        workspace=workspace_for(user), archived_at__isnull=True
+    )
+    if q:
+        rows = rows.filter(body__icontains=q)
+    return _positive_page(page, Paginator(rows.order_by("-occurred_at", "id"), 50))
+
+
+def _commitment_person_ids(values):
+    if isinstance(values, (str, bytes)):
+        raise ValidationError({"person_ids": ["Select one or more people."]})
+    try:
+        ids = [_uuid(value, "person_ids") for value in values]
+    except TypeError:
+        raise ValidationError({"person_ids": ["Select one or more people."]}) from None
+    if not ids:
+        raise ValidationError({"person_ids": ["Select one or more people."]})
+    if len(ids) != len(set(ids)):
+        raise ValidationError({"person_ids": ["Select each person once."]})
+    return ids
+
+
+def _validate_commitment(description):
+    if (
+        not isinstance(description, str)
+        or not 1 <= len(description.strip()) <= 2000
+        or invalid_text(description)
+    ):
+        raise ValidationError(
+            {"description": ["Enter a description of 1–2000 characters."]}
+        )
+    return description
+
+
+def get_commitment(user, commitment_id):
+    from .models import Commitment
+
+    try:
+        commitment_id = UUID(str(commitment_id))
+    except (ValueError, TypeError, AttributeError):
+        raise Http404 from None
+    try:
+        return (
+            Commitment.objects.select_related(
+                "owed_by", "owed_to", "created_by", "source_interaction"
+            )
+            .prefetch_related("person_links__person")
+            .get(id=commitment_id, workspace=workspace_for(user))
+        )
+    except Commitment.DoesNotExist:
+        raise Http404 from None
+
+
+def commitment_people(commitment):
+    return sorted(
+        (
+            link.person
+            for link in commitment.person_links.all()
+            if link.archived_at is None
+        ),
+        key=lambda party: (party.display_name, str(party.id)),
+    )
+
+
+def _lock_interactions(workspace, ids):
+    from .models import Interaction
+
+    ids = sorted(set(ids), key=str)
+    rows = list(
+        Interaction.objects.select_for_update()
+        .filter(workspace=workspace, id__in=ids)
+        .order_by("id")
+    )
+    if len(rows) != len(ids):
+        raise ValidationError(
+            {"source_interaction_id": ["Select a valid interaction."]}
+        )
+    return {row.id: row for row in rows}
+
+
+@transaction.atomic
+def create_commitment(
+    user,
+    description,
+    owed_by_party_id,
+    owed_to_party_id,
+    due_on,
+    person_ids,
+    source_interaction_id=None,
+    interactions_enabled=True,
+):
+    from .models import Commitment, CommitmentPerson
+
+    workspace = workspace_for(user)
+    owed_by_id = _uuid(owed_by_party_id, "owed_by_party_id")
+    owed_to_id = _uuid(owed_to_party_id, "owed_to_party_id")
+    person_ids = _commitment_person_ids(person_ids)
+    parties = _lock_parties(
+        workspace, {owed_by_id, owed_to_id, *person_ids}, require_active=True
+    )
+    if Person.objects.filter(party_id__in=person_ids).count() != len(person_ids):
+        raise ValidationError({"person_ids": ["Select valid people."]})
+    source_id = None
+    if source_interaction_id not in (None, ""):
+        if not interactions_enabled:
+            raise ValidationError(
+                {"source_interaction_id": ["Source interactions are disabled."]}
+            )
+        source_id = _uuid(source_interaction_id, "source_interaction_id")
+    interactions = _lock_interactions(workspace, [source_id] if source_id else [])
+    commitment = Commitment.objects.create(
+        workspace=workspace,
+        description=_validate_commitment(description),
+        owed_by=parties[owed_by_id],
+        owed_to=parties[owed_to_id],
+        due_on=due_on,
+        status="open",
+        completed_at=None,
+        created_by=user,
+        source_interaction=interactions.get(source_id),
+    )
+    CommitmentPerson.objects.bulk_create(
+        [
+            CommitmentPerson(
+                workspace=workspace, commitment=commitment, person=parties[person_id]
+            )
+            for person_id in person_ids
+        ]
+    )
+    return commitment
+
+
+@transaction.atomic
+def update_commitment(
+    user,
+    commitment_id,
+    expected_version,
+    description,
+    owed_by_party_id,
+    owed_to_party_id,
+    due_on,
+    person_ids,
+    source_interaction_id=UNSET,
+    interactions_enabled=True,
+):
+    from django.db.models import F
+    from django.utils import timezone
+
+    from .models import Commitment, CommitmentPerson
+
+    existing = get_commitment(user, commitment_id)
+    old_person_ids = {person.id for person in commitment_people(existing)}
+    new_person_ids = _commitment_person_ids(person_ids)
+    owed_by_id = _uuid(owed_by_party_id, "owed_by_party_id")
+    owed_to_id = _uuid(owed_to_party_id, "owed_to_party_id")
+    old_party_ids = {
+        existing.owed_by_id,
+        existing.owed_to_id,
+        *old_person_ids,
+    }
+    new_party_ids = {owed_by_id, owed_to_id, *new_person_ids}
+    locked_parties = _lock_parties(existing.workspace, old_party_ids | new_party_ids)
+    if Person.objects.filter(party_id__in=new_person_ids).count() != len(
+        new_person_ids
+    ):
+        raise ValidationError({"person_ids": ["Select valid people."]})
+    if source_interaction_id is UNSET:
+        target_source_id = existing.source_interaction_id
+    elif source_interaction_id in (None, ""):
+        target_source_id = None
+    else:
+        target_source_id = _uuid(source_interaction_id, "source_interaction_id")
+    if (
+        not interactions_enabled
+        and target_source_id is not None
+        and target_source_id != existing.source_interaction_id
+    ):
+        raise ValidationError(
+            {"source_interaction_id": ["Source interactions are disabled."]}
+        )
+    interaction_ids = {
+        value for value in (existing.source_interaction_id, target_source_id) if value
+    }
+    interactions = _lock_interactions(existing.workspace, interaction_ids)
+    commitment = Commitment.objects.select_for_update().get(
+        pk=existing.pk, workspace=existing.workspace
+    )
+    current_person_ids = set(
+        CommitmentPerson.objects.filter(
+            commitment=commitment,
+            workspace=commitment.workspace,
+            archived_at__isnull=True,
+        ).values_list("person_id", flat=True)
+    )
+    if (
+        current_person_ids != old_person_ids
+        or commitment.owed_by_id != existing.owed_by_id
+        or commitment.owed_to_id != existing.owed_to_id
+        or commitment.source_interaction_id != existing.source_interaction_id
+    ):
+        raise Conflict("This commitment changed. Reload and review your changes.")
+    check_version(commitment, expected_version)
+    newly_linked = set(new_person_ids) - old_person_ids
+    if owed_by_id != existing.owed_by_id:
+        newly_linked.add(owed_by_id)
+    if owed_to_id != existing.owed_to_id:
+        newly_linked.add(owed_to_id)
+    for party_id in newly_linked:
+        if locked_parties[party_id].archived_at is not None:
+            raise ValidationError({"party": ["Select active parties for new links."]})
+    description = _validate_commitment(description)
+    now = timezone.now()
+    CommitmentPerson.objects.filter(commitment=commitment).exclude(
+        person_id__in=new_person_ids
+    ).update(archived_at=now, updated_at=now, version=F("version") + 1)
+    prior = {
+        link.person_id: link
+        for link in CommitmentPerson.objects.filter(
+            commitment=commitment, person_id__in=new_person_ids
+        )
+    }
+    additions = []
+    for person_id in new_person_ids:
+        link = prior.get(person_id)
+        if link:
+            if link.archived_at is not None:
+                link.archived_at = None
+                link.version += 1
+                link.save(update_fields=["archived_at", "version", "updated_at"])
+        else:
+            additions.append(
+                CommitmentPerson(
+                    workspace=commitment.workspace,
+                    commitment=commitment,
+                    person=locked_parties[person_id],
+                )
+            )
+    CommitmentPerson.objects.bulk_create(additions)
+    commitment.description = description
+    commitment.owed_by = locked_parties[owed_by_id]
+    commitment.owed_to = locked_parties[owed_to_id]
+    commitment.due_on = due_on
+    commitment.source_interaction = interactions.get(target_source_id)
+    return advance(commitment)
+
+
+@transaction.atomic
+def set_commitment_completed(user, commitment_id, expected_version, completed):
+    from django.utils import timezone
+
+    from .models import Commitment
+
+    existing = get_commitment(user, commitment_id)
+    party_ids = {
+        existing.owed_by_id,
+        existing.owed_to_id,
+        *(person.id for person in commitment_people(existing)),
+    }
+    _lock_parties(existing.workspace, party_ids)
+    if existing.source_interaction_id:
+        _lock_interactions(existing.workspace, [existing.source_interaction_id])
+    commitment = Commitment.objects.select_for_update().get(
+        pk=existing.pk, workspace=existing.workspace
+    )
+    check_version(commitment, expected_version)
+    target = "completed" if completed else "open"
+    if commitment.status == target:
+        raise ValidationError({"__all__": [f"This commitment is already {target}."]})
+    commitment.status = target
+    commitment.completed_at = timezone.now() if completed else None
+    return advance(commitment)
+
+
+def list_commitments(user, status="open", due="all", page="1"):
+    from django.core.paginator import Paginator
+    from django.db.models import F
+    from django.utils import timezone
+
+    if status not in ("open", "completed", "all") or due not in (
+        "all",
+        "overdue",
+        "today",
+        "undated",
+    ):
+        raise ValidationError({"query": ["Invalid commitment filter."]})
+    from .models import Commitment
+
+    rows = Commitment.objects.filter(workspace=workspace_for(user)).select_related(
+        "owed_by", "owed_to", "created_by"
+    )
+    if status != "all":
+        rows = rows.filter(status=status)
+    today = timezone.now().date()
+    if due == "overdue":
+        rows = rows.filter(status="open", due_on__lt=today)
+    elif due == "today":
+        rows = rows.filter(due_on=today)
+    elif due == "undated":
+        rows = rows.filter(due_on__isnull=True)
+    rows = rows.order_by(F("due_on").asc(nulls_last=True), "created_at", "id")
+    return _positive_page(page, Paginator(rows, 50))
+
+
+def commitment_panels(user, person_id, status="open", page="1"):
+    from django.core.paginator import Paginator
+    from django.db.models import F
+
+    person = get_person(user, person_id)
+    if status not in ("open", "completed", "all"):
+        raise ValidationError({"query": ["Invalid commitment status."]})
+    from .models import Commitment
+
+    rows = Commitment.objects.filter(
+        workspace=person.workspace,
+        person_links__workspace=person.workspace,
+        person_links__person=person,
+        person_links__archived_at__isnull=True,
+    ).select_related("owed_by", "owed_to", "created_by")
+    if status != "all":
+        rows = rows.filter(status=status)
+    rows = rows.order_by(F("due_on").asc(nulls_last=True), "created_at", "id")
+    return _positive_page(page, Paginator(rows, 50))
+
+
 def validate_note(body, source):
     errors = {}
     for field, value, limit in (("body", body, 20000), ("source", source, 500)):

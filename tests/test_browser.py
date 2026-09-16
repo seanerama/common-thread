@@ -222,3 +222,47 @@ def test_interactions_browser_and_independent_flags(
         party_directory="on",
         interactions="on",
     )
+
+
+@pytest.mark.browser
+@pytest.mark.django_db(transaction=True)
+def test_commitments_browser_and_independent_flags(
+    live_server, owners, tmp_path, settings
+):
+    settings.INTERACTIONS_ENABLED = True
+    settings.COMMITMENTS_ENABLED = True
+    record = tmp_path / "fictional-commitments.json"
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        record_file=record,
+        interactions="on",
+        commitments="on",
+    )
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        interactions="on",
+        commitments="on",
+    )
+    settings.INTERACTIONS_ENABLED = False
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        interactions="off",
+        commitments="on",
+    )
+    settings.COMMITMENTS_ENABLED = False
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        interactions="off",
+        commitments="off",
+    )

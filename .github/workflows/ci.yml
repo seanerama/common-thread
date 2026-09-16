@@ -36,6 +36,7 @@ jobs:
       PARTY_DIRECTORY_ENABLED: "false"
       RELATIONSHIPS_ENABLED: "false"
       INTERACTIONS_ENABLED: "false"
+      COMMITMENTS_ENABLED: "false"
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
       CSRF_TRUSTED_ORIGINS: http://localhost:18009
     steps:
@@ -52,7 +53,7 @@ jobs:
         run: |
           uv sync --frozen
           uv run playwright install --with-deps chromium
-      - name: Run every committed gate (Stages 1–5 off/on; ARM under QEMU)
+      - name: Run every committed gate (Stages 1–6 off/on; ARM under QEMU)
         run: node .verity/run-gates.cjs
       - name: Publish the exact tested images
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository

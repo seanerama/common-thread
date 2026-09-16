@@ -100,4 +100,8 @@ class PeopleManagementGateMiddleware:
             r"/interactions(?:/.*)?/", request.path_info
         ):
             return HttpResponse("Not found", status=404)
+        if not settings.COMMITMENTS_ENABLED and re.fullmatch(
+            r"/commitments(?:/.*)?/", request.path_info
+        ):
+            return HttpResponse("Not found", status=404)
         return self.get_response(request)

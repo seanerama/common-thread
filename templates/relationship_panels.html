@@ -8,14 +8,14 @@
 · {{ relationship.kind }}{% if relationship.role %} · {{ relationship.role }}{% endif %}
 {% if relationship.starts_on %} · starts {{ relationship.starts_on }}{% endif %}{% if relationship.ends_on %} · ends {{ relationship.ends_on }}{% endif %}
 </li>{% empty %}<li>No current or future relationships.</li>{% endfor %}</ul>
-{% if relationships.has_previous %}<a href="?relationships_page={{ relationships.previous_page_number }}&amp;relationships_ended_page={{ ended_relationships.number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}">Previous relationships</a>{% endif %}
-{% if relationships.has_next %}<a href="?relationships_page={{ relationships.next_page_number }}&amp;relationships_ended_page={{ ended_relationships.number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}">Next relationships</a>{% endif %}
+{% if relationships.has_previous %}<a href="?relationships_page={{ relationships.previous_page_number }}&amp;relationships_ended_page={{ ended_relationships.number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Previous relationships</a>{% endif %}
+{% if relationships.has_next %}<a href="?relationships_page={{ relationships.next_page_number }}&amp;relationships_ended_page={{ ended_relationships.number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Next relationships</a>{% endif %}
 <h3>Ended</h3>
 <ul>{% for relationship in ended_relationships %}<li>
 <strong>Ended</strong>:
 <a href="/relationships/{{ relationship.id }}/">{{ relationship.from_party.display_name }} → {{ relationship.to_party.display_name }}</a>
 · {{ relationship.kind }}{% if relationship.role %} · {{ relationship.role }}{% endif %} · ended {{ relationship.ends_on }}
 </li>{% empty %}<li>No ended relationships.</li>{% endfor %}</ul>
-{% if ended_relationships.has_previous %}<a href="?relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.previous_page_number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}">Previous ended relationships</a>{% endif %}
-{% if ended_relationships.has_next %}<a href="?relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.next_page_number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}">Next ended relationships</a>{% endif %}
+{% if ended_relationships.has_previous %}<a href="?relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.previous_page_number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Previous ended relationships</a>{% endif %}
+{% if ended_relationships.has_next %}<a href="?relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.next_page_number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Next ended relationships</a>{% endif %}
 </section>
