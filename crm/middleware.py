@@ -83,4 +83,9 @@ class PeopleManagementGateMiddleware:
             request.path_info,
         ):
             return HttpResponse("Not found", status=404)
+        if not settings.CONTEXT_NOTES_ENABLED and re.fullmatch(
+            r"/people/[^/]+/notes/(?:new|[^/]+/(?:edit|history))/",
+            request.path_info,
+        ):
+            return HttpResponse("Not found", status=404)
         return self.get_response(request)

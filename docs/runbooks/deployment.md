@@ -140,3 +140,29 @@ recreate, and use `--people-management on --read-file /tmp/ct-managed-person.jso
 to verify the contact persisted through the toggle. Disabling the flag does not
 remove data. Local browser gates and both amd64/arm64 container gates execute this
 off/on/off/on sequence; container gates also read the managed contact after restore.
+
+## Stage 2 context-note acceptance
+
+`CONTEXT_NOTES_ENABLED` defaults to `false` and operates independently of
+`PEOPLE_MANAGEMENT_ENABLED`. Set it to `true` in the external environment file and
+recreate the app to enable sourced notes, corrections and history. Apply the new
+migration from the exact tested image before starting it. Setting the flag back to
+`false` and recreating the app hides note panels and rejects all note routes while
+retaining current notes, original authors and correction history in PostgreSQL.
+
+With operator smoke credentials supplied through `SMOKE_USERNAME` and
+`SMOKE_PASSWORD`, run the browser against the deployed artifact:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --people-management on --context-notes on --record-file /tmp/context-proof.json
+```
+
+The smoke creates fictional sourced context, corrects it, rejects a stale edit and
+reads the prior content/source with author/editor provenance. After app replacement,
+run the same command with `--read-file /tmp/context-proof.json` instead of
+`--record-file`. Repeat with `--context-notes off` after disabling/recreating, then
+reenable/recreate and reread to prove data survived the kill switch. Set
+`--people-management off` when that separate feature is disabled. The browser gate
+runs this restart sequence; both architecture container gates additionally read
+current notes and history after image-container replacement and database restore.

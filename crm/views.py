@@ -231,6 +231,9 @@ def person_detail(request, person_id):
         context["contact_points"] = services.list_contact_points(
             request.user, person_id
         )
+    context["notes_enabled"] = settings.CONTEXT_NOTES_ENABLED
+    if settings.CONTEXT_NOTES_ENABLED:
+        context["notes"] = services.list_context_notes(request.user, person_id)
     return render(request, "person_detail.html", context)
 
 
@@ -439,4 +442,64 @@ def contact_point_archive(request, person_id, point_id):
             request.user, person_id, point_id, **data
         ),
         "Archive contact point",
+    )
+
+
+def notes_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.CONTEXT_NOTES_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@notes_enabled
+def context_note_form(request, person_id, note_id=None):
+    from .forms import ContextNoteForm
+
+    person = services.get_person(request.user, person_id)
+    note = (
+        services.get_context_note(request.user, person_id, note_id) if note_id else None
+    )
+    if request.method == "POST":
+        allowed = {"body", "source", "expected_version", "csrfmiddlewaretoken"}
+        if set(request.POST) - allowed or any(
+            len(request.POST.getlist(key)) != 1 for key in request.POST
+        ):
+            return HttpResponse("Invalid request", status=400)
+    initial = {"expected_version": note.version if note else person.version}
+    if note:
+        initial.update(body=note.body, source=note.source)
+    form = ContextNoteForm(
+        request.POST if request.method == "POST" else None, initial=initial
+    )
+    return workflow_form(
+        request,
+        person,
+        form,
+        "Correct note" if note else "Add context note",
+        lambda data: (
+            services.update_context_note(request.user, person_id, note_id, **data)
+            if note
+            else services.create_context_note(request.user, person_id, **data)
+        ),
+        "Save note",
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@notes_enabled
+def context_note_history(request, person_id, note_id):
+    person = services.get_person(request.user, person_id)
+    note = services.get_context_note(request.user, person_id, note_id)
+    revisions = services.context_note_history(request.user, person_id, note_id)
+    return render(
+        request,
+        "note_history.html",
+        {"person": person, "note": note, "revisions": revisions},
     )

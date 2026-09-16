@@ -241,3 +241,95 @@ def search_people(user, q="", archived="exclude", page="1"):
     if number > paginator.num_pages:
         return Page([], number, paginator)
     return paginator.page(number)
+
+
+def validate_note(body, source):
+    errors = {}
+    for field, value, limit in (("body", body, 20000), ("source", source, 500)):
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > limit
+            or invalid_text(value)
+        ):
+            errors[field] = [f"Enter {field} of 1–{limit} characters."]
+    if errors:
+        raise ValidationError(errors)
+    return body, source
+
+
+def get_context_note(user, person_id, note_id):
+    from .models import ContextNote
+
+    person = get_person(user, person_id)
+    try:
+        return ContextNote.objects.get(
+            id=UUID(str(note_id)), person=person, workspace=person.workspace
+        )
+    except (ValueError, TypeError, AttributeError, ContextNote.DoesNotExist):
+        raise Http404 from None
+
+
+def list_context_notes(user, person_id):
+    person = get_person(user, person_id)
+    return (
+        person.context_notes.filter(workspace=person.workspace)
+        .select_related("authored_by")
+        .order_by("created_at", "id")
+    )
+
+
+def context_note_history(user, person_id, note_id):
+    note = get_context_note(user, person_id, note_id)
+    return (
+        note.revisions.filter(workspace=note.workspace)
+        .select_related("authored_by", "edited_by")
+        .order_by("-version")
+    )
+
+
+@transaction.atomic
+def create_context_note(user, person_id, expected_version, body, source):
+    from .models import ContextNote
+
+    person = locked_person(user, person_id)
+    check_version(person, expected_version)
+    require_active(person)
+    body, source = validate_note(body, source)
+    note = ContextNote.objects.create(
+        workspace=person.workspace,
+        person=person,
+        body=body,
+        source=source,
+        authored_by=user,
+    )
+    advance(person)
+    return note
+
+
+@transaction.atomic
+def update_context_note(user, person_id, note_id, expected_version, body, source):
+    from django.utils import timezone
+
+    from .models import ContextNote, ContextNoteRevision
+
+    person = locked_person(user, person_id)
+    existing = get_context_note(user, person_id, note_id)
+    note = ContextNote.objects.select_for_update().get(
+        pk=existing.pk, person=person, workspace=person.workspace
+    )
+    check_version(note, expected_version)
+    require_active(person)
+    body, source = validate_note(body, source)
+    ContextNoteRevision.objects.create(
+        workspace=note.workspace,
+        note=note,
+        body=note.body,
+        source=note.source,
+        version=note.version,
+        authored_by=note.authored_by,
+        edited_by=user,
+        edited_at=timezone.now(),
+    )
+    note.body, note.source = body, source
+    return advance(note)
