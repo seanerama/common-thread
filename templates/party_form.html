@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if party %}<p>{{ party.display_name }}</p>{% endif %}
+{% if form.errors %}<div class="error" role="alert">{{ form.non_field_errors }}{% for field in form %}{{ field.errors }}{% endfor %}</div>{% endif %}
+{% if conflict %}<p><a href="{{ cancel_path }}">Reload and review the current record</a></p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<p>{{ field.label_tag }}{{ field }}</p>{% endif %}{% endfor %}
+<p><button type="submit">{{ submit_label }}</button> <a href="{{ cancel_path }}">Cancel</a></p>
+</form>
+{% endblock %}

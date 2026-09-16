@@ -14,6 +14,15 @@ class PersonForm(VersionForm):
     is_client = forms.BooleanField(label="Client", required=False)
 
 
+class PartyCreateForm(forms.Form):
+    display_name = forms.CharField(label="Name", max_length=200)
+    is_client = forms.BooleanField(label="Client", required=False)
+
+
+class PartyForm(VersionForm, PartyCreateForm):
+    pass
+
+
 class ContactPointForm(VersionForm):
     kind = forms.ChoiceField(choices=(("email", "Email"), ("phone", "Phone")))
     value = forms.CharField(max_length=320)

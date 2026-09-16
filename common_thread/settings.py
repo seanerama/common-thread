@@ -60,6 +60,7 @@ TEMPLATES = [
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
+                "crm.context_processors.feature_flags",
             ]
         },
     }
@@ -114,4 +115,8 @@ PEOPLE_MANAGEMENT_ENABLED = (
 
 CONTEXT_NOTES_ENABLED = (
     os.environ.get("CONTEXT_NOTES_ENABLED", "false").lower() == "true"
+)
+
+PARTY_DIRECTORY_ENABLED = (
+    os.environ.get("PARTY_DIRECTORY_ENABLED", "false").lower() == "true"
 )

@@ -88,4 +88,8 @@ class PeopleManagementGateMiddleware:
             request.path_info,
         ):
             return HttpResponse("Not found", status=404)
+        if not settings.PARTY_DIRECTORY_ENABLED and re.fullmatch(
+            r"/(?:organizations|households)(?:/.*)?/", request.path_info
+        ):
+            return HttpResponse("Not found", status=404)
         return self.get_response(request)

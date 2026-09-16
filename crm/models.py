@@ -57,6 +57,18 @@ class Person(models.Model):
     )
 
 
+class Organization(models.Model):
+    party = models.OneToOneField(
+        Party, primary_key=True, on_delete=models.PROTECT, related_name="organization"
+    )
+
+
+class Household(models.Model):
+    party = models.OneToOneField(
+        Party, primary_key=True, on_delete=models.PROTECT, related_name="household"
+    )
+
+
 class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     failures = models.PositiveIntegerField(default=0)

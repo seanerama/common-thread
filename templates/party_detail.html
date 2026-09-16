@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ party.display_name }}</h1>
+<p>{{ singular }} · {% if party.is_client %}Client{% else %}Not a client{% endif %}</p>
+{% if party.archived_at %}
+<p>This {{ singular_lower }} is archived. Restore it to make changes.</p>
+<form method="post" action="/{{ prefix }}/{{ party.id }}/restore/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ party.version }}"><button type="submit">Restore {{ singular_lower }}</button></form>
+{% else %}
+<p><a href="/{{ prefix }}/{{ party.id }}/edit/">Edit {{ singular_lower }}</a></p>
+<form method="post" action="/{{ prefix }}/{{ party.id }}/archive/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ party.version }}"><button type="submit">Archive {{ singular_lower }}</button></form>
+{% endif %}
+<p><a href="/{{ prefix }}/">Back to {{ prefix }}</a></p>
+{% endblock %}

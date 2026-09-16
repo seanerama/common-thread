@@ -87,3 +87,51 @@ def test_context_notes_browser(live_server, owners, tmp_path, settings, manageme
         context_notes="on",
         **common,
     )
+
+
+@pytest.mark.browser
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize("old_features", [False, True])
+def test_party_directory_browser(live_server, owners, tmp_path, settings, old_features):
+    settings.PARTY_DIRECTORY_ENABLED = True
+    settings.PEOPLE_MANAGEMENT_ENABLED = old_features
+    settings.CONTEXT_NOTES_ENABLED = old_features
+    record = tmp_path / "fictional-parties.json"
+    common = {
+        "people_management": "on" if old_features else "off",
+        "context_notes": "on" if old_features else "off",
+    }
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        record_file=record,
+        party_directory="on",
+        **common,
+    )
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        party_directory="on",
+        **common,
+    )
+    settings.PARTY_DIRECTORY_ENABLED = False
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        party_directory="off",
+        **common,
+    )
+    settings.PARTY_DIRECTORY_ENABLED = True
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        party_directory="on",
+        **common,
+    )
