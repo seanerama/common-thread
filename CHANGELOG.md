@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.0.2
+
+### Fixes
+- harden runtime image and enforce release scans (#17)
+
 ## 0.0.1
 
 ### Features

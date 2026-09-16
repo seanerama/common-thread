@@ -3,12 +3,12 @@
 > Runtime/ops truth (framework-spec §4.6). Generated from `.verity/runtime.json`
 > by the Release/Deploy Operator. Secret LOCATIONS only — never values.
 
-**Live version:** stage-2 / 16ffb4b91b85
-**Deployed at:** 2026-09-16T03:44:47.453764+00:00
-**Rollback from:** ghcr.io/seanerama/common-thread@sha256:70ca4d6893c45b57edfca05c7c735d95dfaad4a5bb2519cc127eea2ce5c25bbe
+**Live version:** v0.0.2 / 932cb3a4777c
+**Deployed at:** 2026-09-16T17:18:03Z
+**Rollback from:** ghcr.io/seanerama/common-thread@sha256:eac93d7804998c35ba009c6163f3607f11963fef225906597e02d6aaaacb4dc7
 
 ## Environments
-- **testing:** {"target":"mini-hp01 (private Tailscale; URL in deploy-access.md)","image":"ghcr.io/seanerama/common-thread@sha256:eac93d7804998c35ba009c6163f3607f11963fef225906597e02d6aaaacb4dc7","tested_commit":"16ffb4b91b85329c911c424ace05b00a68dc0389","ci":"https://github.com/seanerama/common-thread/actions/runs/35052271612","verified":"HTTPS browser people/contact and sourced-note create/correct/history; independent flag cycles; container replacement read; disposable backup restore passed","flags":{"PEOPLE_MANAGEMENT_ENABLED":true,"CONTEXT_NOTES_ENABLED":true}}
+- **testing:** {"target":"mini-hp01 (private Tailscale; URL in deploy-access.md)","image":"ghcr.io/seanerama/common-thread@sha256:224bee6cafea3d874e14e2567dfbf0909de3889c6151f029bd73b85426540b02","tested_commit":"932cb3a4777c4b2931ddd939bb5efb862b74f325","ci":"https://github.com/seanerama/common-thread/actions/runs/35124760710","verified":"v0.0.2 deploy.sh applied crm 0004-0007 after pre-migration backup; HTTPS browser smoke: baseline (people+notes on, new features dark) then all seven flags on with Realtor/Pre-Sales/Attorney scenarios; person-overview kill switch off/on with container replacement and proof re-read; runtime pip/uv absent, UID 10001; post-verification backup and pre-migration dump both restored into disposable databases","flags":{"PEOPLE_MANAGEMENT_ENABLED":true,"CONTEXT_NOTES_ENABLED":true,"PARTY_DIRECTORY_ENABLED":true,"RELATIONSHIPS_ENABLED":true,"INTERACTIONS_ENABLED":true,"COMMITMENTS_ENABLED":true,"PERSON_OVERVIEW_ENABLED":true},"release_scan":"https://github.com/seanerama/common-thread/actions/runs/35125028933 (Trivy 0.67.2, 0 HIGH/CRITICAL on amd64 and arm64)"}
 
 ## Secret locations (names + on-disk locations only, never values)
 - DATABASE_URL, DJANGO_SECRET_KEY and fictional smoke credentials: private host app.env mapped in .verity/deploy-access.md
