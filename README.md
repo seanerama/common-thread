@@ -12,9 +12,14 @@ product, not three separate products or a real-estate system with extra fields.
 
 ## Project status
 
-Started September 15, 2026. The Stage 0 implementation supplies operator-provisioned
-private workspaces, login, and persistent person creation/read in Django and PostgreSQL.
-See [STATUS](STATUS.md) for observed CI and deployment evidence.
+Started September 15, 2026. Stages 0–2 provide private workspaces and login,
+persistent people and contact details, search, archive/restore, and sourced context
+notes with correction history. Each stage passed its build and source review loop.
+See [STATUS](STATUS.md) for observed CI and private testing deployment evidence.
+
+People management and context notes default off; the deployment runbook explains
+how to enable them. Relationships, interactions, commitments, external integrations,
+and the in-app help agent remain outside this first person-foundation release.
 
 - [Coding agent handoff — start here](CODING_AGENT_HANDOFF.md)
 - [Product brief and first milestone](docs/product-brief.md)
