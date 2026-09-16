@@ -1,0 +1,13 @@
+<section aria-labelledby="interactions-heading">
+<h2 id="interactions-heading">Interactions</h2>
+{% for interaction in interactions %}
+<article>
+<h3>{{ interaction.occurred_at }}</h3>
+<div style="white-space: pre-wrap">{{ interaction.body }}</div>
+<p>Participants: {% for link in interaction.participant_links.all %}{{ link.party.display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+<p><a href="/interactions/{{ interaction.id }}/">View interaction</a></p>
+</article>
+{% empty %}<p>No current interactions.</p>{% endfor %}
+{% if interactions.has_previous %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.previous_page_number }}">Previous interactions</a>{% endif %}
+{% if interactions.has_next %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.next_page_number }}">Next interactions</a>{% endif %}
+</section>

@@ -546,6 +546,253 @@ def relationship_panels(user, party_id, page="1", ended_page="1"):
     return active_result, ended_result
 
 
+def interaction_selector(user, q="", page="1"):
+    return relationship_selector(user, q, page)
+
+
+def interaction_selected_parties(user, values, retainable_ids=()):
+    workspace = workspace_for(user)
+    ids = _interaction_participant_ids(values) if values else []
+    retainable = set(retainable_ids)
+    parties = list(Party.objects.filter(workspace=workspace, id__in=ids))
+    if len(parties) != len(ids) or any(
+        party.archived_at is not None and party.id not in retainable
+        for party in parties
+    ):
+        raise ValidationError({"participant_ids": ["Select valid active parties."]})
+    by_id = {party.id: party for party in parties}
+    return [by_id[party_id] for party_id in ids]
+
+
+def _interaction_participant_ids(values):
+    if isinstance(values, (str, bytes)):
+        raise ValidationError({"participant_ids": ["Select one or more participants."]})
+    try:
+        ids = [_uuid(value, "participant_ids") for value in values]
+    except TypeError:
+        raise ValidationError(
+            {"participant_ids": ["Select one or more participants."]}
+        ) from None
+    if not ids:
+        raise ValidationError({"participant_ids": ["Select one or more participants."]})
+    if len(ids) != len(set(ids)):
+        raise ValidationError({"participant_ids": ["Select each participant once."]})
+    return ids
+
+
+def _validate_interaction(occurred_at, body):
+    from datetime import UTC, datetime
+
+    errors = {}
+    value = occurred_at
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            value = None
+    if value is None or not isinstance(value, datetime) or value.utcoffset() is None:
+        errors["occurred_at"] = [
+            "Enter an ISO date and time with an explicit UTC offset."
+        ]
+    if (
+        not isinstance(body, str)
+        or not body.strip()
+        or len(body) > 20000
+        or invalid_text(body)
+    ):
+        errors["body"] = ["Enter interaction text of 1–20000 characters."]
+    if errors:
+        raise ValidationError(errors)
+    return value.astimezone(UTC), body
+
+
+def get_interaction(user, interaction_id):
+    from .models import Interaction
+
+    try:
+        interaction_id = UUID(str(interaction_id))
+    except (ValueError, TypeError, AttributeError):
+        raise Http404 from None
+    try:
+        return (
+            Interaction.objects.select_related("authored_by")
+            .prefetch_related("participant_links__party")
+            .get(id=interaction_id, workspace=workspace_for(user))
+        )
+    except Interaction.DoesNotExist:
+        raise Http404 from None
+
+
+def interaction_parties(interaction):
+    return sorted(
+        (link.party for link in interaction.participant_links.all()),
+        key=lambda party: (party.display_name, str(party.id)),
+    )
+
+
+@transaction.atomic
+def create_interaction(user, occurred_at, body, participant_ids):
+    from .models import Interaction, InteractionParticipant
+
+    workspace = workspace_for(user)
+    participant_ids = _interaction_participant_ids(participant_ids)
+    parties = _lock_parties(workspace, participant_ids, require_active=True)
+    occurred_at, body = _validate_interaction(occurred_at, body)
+    interaction = Interaction.objects.create(
+        workspace=workspace,
+        occurred_at=occurred_at,
+        body=body,
+        authored_by=user,
+    )
+    InteractionParticipant.objects.bulk_create(
+        [
+            InteractionParticipant(
+                workspace=workspace,
+                interaction=interaction,
+                party=parties[party_id],
+            )
+            for party_id in participant_ids
+        ]
+    )
+    return interaction
+
+
+@transaction.atomic
+def update_interaction(
+    user, interaction_id, expected_version, occurred_at, body, participant_ids
+):
+    from django.db.models import F
+    from django.utils import timezone
+
+    from .models import (
+        Interaction,
+        InteractionParticipant,
+        InteractionRevision,
+        InteractionRevisionParticipant,
+    )
+
+    existing = get_interaction(user, interaction_id)
+    submitted_ids = _interaction_participant_ids(participant_ids)
+    old_ids = {link.party_id for link in existing.participant_links.all()}
+    locked_parties = _lock_parties(
+        existing.workspace, old_ids | set(submitted_ids), require_active=False
+    )
+    interaction = Interaction.objects.select_for_update().get(
+        pk=existing.pk, workspace=existing.workspace
+    )
+    current_ids = set(
+        InteractionParticipant.objects.filter(
+            interaction=interaction, workspace=interaction.workspace
+        ).values_list("party_id", flat=True)
+    )
+    if current_ids != old_ids:
+        raise Conflict("This interaction changed. Reload and review your changes.")
+    check_version(interaction, expected_version)
+    for party_id in set(submitted_ids) - current_ids:
+        if locked_parties[party_id].archived_at is not None:
+            raise ValidationError(
+                {"participant_ids": ["Select active parties for new participants."]}
+            )
+    occurred_at, body = _validate_interaction(occurred_at, body)
+    revision = InteractionRevision.objects.create(
+        workspace=interaction.workspace,
+        interaction=interaction,
+        occurred_at=interaction.occurred_at,
+        body=interaction.body,
+        version=interaction.version,
+        authored_by=interaction.authored_by,
+        edited_by=user,
+        edited_at=timezone.now(),
+    )
+    InteractionRevisionParticipant.objects.bulk_create(
+        [
+            InteractionRevisionParticipant(
+                workspace=interaction.workspace,
+                revision=revision,
+                party=locked_parties[party_id],
+            )
+            for party_id in current_ids
+        ]
+    )
+    now = timezone.now()
+    InteractionParticipant.objects.filter(interaction=interaction).exclude(
+        party_id__in=submitted_ids
+    ).update(
+        archived_at=now,
+        updated_at=now,
+        version=F("version") + 1,
+    )
+    retained_ids = current_ids & set(submitted_ids)
+    new_ids = [party_id for party_id in submitted_ids if party_id not in retained_ids]
+    prior_links = {
+        link.party_id: link
+        for link in InteractionParticipant.all_objects.filter(
+            interaction=interaction, party_id__in=new_ids
+        )
+    }
+    create_links = []
+    for party_id in new_ids:
+        link = prior_links.get(party_id)
+        if link:
+            link.archived_at = None
+            link.version += 1
+            link.save(update_fields=["archived_at", "version", "updated_at"])
+        else:
+            create_links.append(
+                InteractionParticipant(
+                    workspace=interaction.workspace,
+                    interaction=interaction,
+                    party=locked_parties[party_id],
+                )
+            )
+    InteractionParticipant.objects.bulk_create(create_links)
+    interaction.occurred_at = occurred_at
+    interaction.body = body
+    return advance(interaction)
+
+
+def interaction_history(user, interaction_id):
+    interaction = get_interaction(user, interaction_id)
+    return (
+        interaction.revisions.filter(workspace=interaction.workspace)
+        .select_related("authored_by", "edited_by")
+        .prefetch_related("participant_links__party")
+        .order_by("-version", "id")
+    )
+
+
+def interaction_panels(user, party_id, page="1"):
+    from django.core.paginator import Page, Paginator
+
+    workspace = workspace_for(user)
+    party_id = _uuid(party_id)
+    if not Party.objects.filter(pk=party_id, workspace=workspace).exists():
+        raise Http404
+    if not str(page).isascii() or not str(page).isdecimal() or not str(page).strip("0"):
+        raise ValidationError({"page": ["Enter a positive page number."]})
+    from .models import Interaction
+
+    rows = (
+        Interaction.objects.filter(
+            workspace=workspace,
+            participant_links__workspace=workspace,
+            participant_links__party_id=party_id,
+            participant_links__archived_at__isnull=True,
+        )
+        .select_related("authored_by")
+        .prefetch_related("participant_links__party")
+        .order_by("-occurred_at", "id")
+    )
+    paginator = Paginator(rows, 50)
+    digits = str(page).lstrip("0")
+    number = int(digits) if len(digits) < 20 else paginator.num_pages + 1
+    return (
+        Page([], number, paginator)
+        if number > paginator.num_pages
+        else paginator.page(number)
+    )
+
+
 def validate_note(body, source):
     errors = {}
     for field, value, limit in (("body", body, 20000), ("source", source, 500)):

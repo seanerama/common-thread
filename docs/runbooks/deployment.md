@@ -213,3 +213,28 @@ app, and read the proof with `--party-directory off --relationships on`; endpoin
 labels and relationship details remain readable while directory routes and links
 stay hidden. Also cycle `--relationships off` and back on to prove the controls and
 routes are hidden while the records persist.
+
+## Stage 5 interaction acceptance
+
+`INTERACTIONS_ENABLED` defaults to `false` in the application, Compose, and the
+example environment. Set it to `true`, apply the additive migration from the exact
+tested image, and recreate the application container. A flag change requires process
+recreation. Disabling the flag hides interaction controls, participant panels, and
+direct routes while retaining current interactions and correction history.
+
+With operator smoke credentials exported, run:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --interactions on --record-file /tmp/interaction-proof.json
+```
+
+The smoke creates one shared conversation for two fictional people, corrects its
+body, replaces one participant, rejects a stale correction, and verifies the current
+record and prior participant set. It confirms that both current participant pages
+show the same interaction and that the removed participant no longer lists it.
+After application replacement or database restore, use `--read-file` with the same
+proof file. Disable the flag, recreate the app, and read with `--interactions off` to
+verify all interaction routes are unavailable without deleting data. Reenable and
+reread with the party-directory and relationship flags either on or off to prove the
+feature flags are independent.

@@ -104,6 +104,108 @@ class Relationship(Record):
         ]
 
 
+class Interaction(Record):
+    occurred_at = models.DateTimeField()
+    body = models.TextField()
+    authored_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="interactions"
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="interaction_positive_version"
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"], name="interaction_workspace_id"
+            ),
+        ]
+
+
+class CurrentInteractionParticipantManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(archived_at__isnull=True)
+
+
+class InteractionParticipant(Record):
+    interaction = models.ForeignKey(
+        Interaction, on_delete=models.PROTECT, related_name="participant_links"
+    )
+    party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="interaction_links"
+    )
+    objects = CurrentInteractionParticipantManager()
+    all_objects = models.Manager()
+
+    class Meta:
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="interaction_participant_positive_version",
+            ),
+            models.UniqueConstraint(
+                fields=["interaction", "party"],
+                name="interaction_participant_once",
+            ),
+        ]
+
+
+class InteractionRevision(Record):
+    interaction = models.ForeignKey(
+        Interaction, on_delete=models.PROTECT, related_name="revisions"
+    )
+    occurred_at = models.DateTimeField()
+    body = models.TextField()
+    authored_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="authored_interaction_revisions"
+    )
+    edited_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="edited_interaction_revisions"
+    )
+    edited_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="interaction_revision_positive_version",
+            ),
+            models.UniqueConstraint(
+                fields=["interaction", "version"],
+                name="interaction_revision_once",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"],
+                name="interaction_revision_workspace_id",
+            ),
+        ]
+
+
+class InteractionRevisionParticipant(Record):
+    revision = models.ForeignKey(
+        InteractionRevision,
+        on_delete=models.PROTECT,
+        related_name="participant_links",
+    )
+    party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="interaction_revision_links"
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="interaction_revision_part_positive_version",
+            ),
+            models.UniqueConstraint(
+                fields=["revision", "party"],
+                name="interaction_revision_participant_once",
+            ),
+        ]
+
+
 class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     failures = models.PositiveIntegerField(default=0)

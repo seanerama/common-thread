@@ -132,3 +132,18 @@ def test_party_directory_runtime_flag_defaults_off(production_env, flag, expecte
     )
     assert result.returncode == 0
     assert result.stdout.strip() == str(expected)
+
+
+@pytest.mark.parametrize(
+    "flag,expected", [(None, False), ("false", False), ("true", True)]
+)
+def test_interactions_runtime_flag_defaults_off(production_env, flag, expected):
+    production_env.pop("INTERACTIONS_ENABLED", None)
+    if flag is not None:
+        production_env["INTERACTIONS_ENABLED"] = flag
+    result = run_python(
+        production_env,
+        "from django.conf import settings; print(settings.INTERACTIONS_ENABLED)",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(expected)

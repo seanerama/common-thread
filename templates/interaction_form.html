@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<form method="get">
+<fieldset><legend>Build the participant selection</legend>
+{% for party in selected_parties %}<label><input type="checkbox" name="selected" value="{{ party.id }}" checked> {{ party.display_name }} ({{ party.kind }}){% if party.archived_at %} — archived{% endif %}</label>{% endfor %}
+{% for party in selector_choices %}<label><input type="checkbox" name="selected" value="{{ party.id }}"> {{ party.display_name }} ({{ party.kind }})</label>{% endfor %}
+<label for="party-search">Find active parties</label>
+<input id="party-search" name="q" value="{{ request.GET.q }}" maxlength="200">
+<button type="submit">Update participant selection</button>
+{% if selector_page.has_previous %}<button type="submit" name="page" value="{{ selector_page.previous_page_number }}">Previous parties</button>{% endif %}
+{% if selector_page.has_next %}<button type="submit" name="page" value="{{ selector_page.next_page_number }}">Next parties</button>{% endif %}
+</fieldset>
+</form>
+<p>Search results contain up to 50 active parties. Check participants and update the selection before searching or paging again.</p>
+{% if form.errors %}<div class="error" role="alert">{{ form.non_field_errors }}{% for field in form %}{{ field.errors }}{% endfor %}</div>{% endif %}
+{% if conflict %}<p><a href="{{ cancel_path }}">Reload and review the current interaction</a></p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<p>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</p>{% endif %}{% endfor %}
+<p><button type="submit">{{ submit_label }}</button> <a href="{{ cancel_path }}">Cancel</a></p>
+</form>
+{% endblock %}
