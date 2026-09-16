@@ -36,3 +36,6 @@ Run `node .verity/run-gates.cjs` to validate the locked identity, required files
 and local documentation links. CI also scans Git history for secrets with Gitleaks.
 These checks cover repository hygiene only; application tests will be added when
 implementation begins.
+
+The [initial backlog](docs/handoff/initial-backlog.md) links the stage specifications
+and GitHub work items for Verity Build, starting with Stage 0.
