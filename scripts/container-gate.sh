@@ -24,6 +24,7 @@ trap cleanup EXIT
 docker buildx build --platform "linux/$platform" --load -t "$APP_IMAGE" .
 test "$(docker image inspect "$APP_IMAGE" --format '{{.Architecture}}')" = "$platform"
 test "$(docker run --rm --entrypoint id "$APP_IMAGE" -u)" != 0
+docker compose pull --policy always db
 docker compose up -d --wait db
 # No migration: readiness must report failure while liveness remains available.
 docker compose up -d app

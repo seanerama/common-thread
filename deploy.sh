@@ -13,7 +13,7 @@ mkdir -p "$RELEASE_DATA_DIR"
 release_dir="$(mktemp -d "$RELEASE_DATA_DIR/release-XXXXXXXX")"
 dc() { docker compose --env-file "$DEPLOY_ENV_FILE" "$@"; }
 # Inspect only image names; never print the resolved configuration or secrets.
-image="$(dc config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["app"]["image"])')"
+image="$(dc config --environment | sed -n 's/^APP_IMAGE=//p')"
 if [[ ! "$image" =~ @sha256:[0-9a-f]{64}$ ]]; then
   echo 'APP_IMAGE must identify the tested image by immutable sha256 digest.' >&2
   exit 2

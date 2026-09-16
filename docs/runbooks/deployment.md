@@ -30,16 +30,15 @@ The gate creates and removes its own database volumes and does not touch deploym
    password if it contains URL reserved characters. Include localhost in ALLOWED_HOSTS.
 4. Set APP_ENV=production, TRUST_PROXY_HTTPS=true, and the actual tailnet hostname
    in ALLOWED_HOSTS and HTTPS origin with port 8445 in CSRF_TRUSTED_ORIGINS. The app
-   listens only on loopback8010 using the host overlay. Only the trusted local TLS
+   listens only on loopback 8010 using the host overlay. Only the trusted local TLS
    proxy may reach it; do not expose the raw app port. Tailscale Serve terminates
-   private HTTPS on port8445 and forwards to http://127.0.0.1:8010. The operator
+   private HTTPS on port 8445 and forwards to http://127.0.0.1:8010. The operator
    configures that listener only after checking it is unused.
 5. Use the committed `deploy.sh /absolute/path/to/app.env` from an operator
    checkout with COMPOSE_FILE pointing to the two deployed Compose files. This
    validates immutable digests, backs up before migration, waits for readiness,
    and restores the prior healthy image or stops the initial failed app while
-   preserving data. The wrapper requires host Python3 only to parse Compose
-   metadata; the application itself does not. The equivalent manual sequence
+   preserving data. The wrapper uses Bash and Docker Compose, with no host Python runtime. The equivalent manual sequence
    follows for operator diagnosis. In that directory export `COMPOSE_PROJECT_NAME=common-thread-test` and
    `COMPOSE_FILE=compose.yml:compose.mini-hp01.yml`. Use the following commands:
 
@@ -101,4 +100,13 @@ fix the failure, and retest. Never use `down --volumes` on the deployed instance
 
 Readiness returns 503 when DB is unavailable or migrations are outstanding; liveness
 remains 200 when the HTTP process responds. CI proves both cases. SIGTERM gets up to
-30 seconds (Gunicorn graceful timeout25); Compose restarts unexpected exits.
+30 seconds (Gunicorn graceful timeout 25); Compose restarts unexpected exits.
+
+## Authentication operations
+
+Sessions expire absolutely after 12 hours. Login failures are limited per casefolded
+username (5 failures) and direct REMOTE_ADDR source (20 failures) within 900 seconds;
+the next attempt returns 429 with Retry-After. Behind the trusted tailnet proxy,
+users may share a source bucket. Forwarded client IP headers are not trusted for
+rate-limit identity. Use `python manage.py changepassword USERNAME` interactively
+inside the app container for an explicit operator password reset.
