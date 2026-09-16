@@ -9,9 +9,8 @@ panel, evidence-backed answers, scoped log reads, issue drafts requiring human
 confirmation, and an evolving FAQ. It requires an application LLM chat loop,
 read-only tools, and a source snapshot tied to the deployed build.
 
-Offered to the owner during architecture. Deferred by architectural default because
-Common Thread has no chat loop and must be useful without AI; no owner acceptance
-was received. This optional selection does not block planning. Do not inject
-helper-bot stages unless explicitly accepted. If accepted,
+The owner explicitly chose to defer the help agent and build the useful CRM first.
+Common Thread has no chat loop and must be useful without AI. Do not inject
+helper-bot stages into the initial plan. If accepted later,
 schedule after Stage 0 and core CRM work, with its source-snapshot, scoped log access,
 feature flag, redaction, and external-action confirmation requirements included.
