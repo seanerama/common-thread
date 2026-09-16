@@ -14,6 +14,19 @@ export TEST_HTTP_PORT="${TEST_HTTP_PORT:-18010}"
 export SMOKE_USERNAME=smoke SMOKE_PASSWORD="$(openssl rand -hex 24)"
 export COMMON_THREAD_PASSWORD="$SMOKE_PASSWORD"
 export DOCKER_DEFAULT_PLATFORM="linux/$platform"
+# Classic Docker stores cannot associate two architectures with the same index
+# reference. Resolve its pinned platform manifest without changing shared images.
+postgres_index="$(docker compose -f compose.yml config --images db)"
+postgres_digest="$(docker buildx imagetools inspect --raw "$postgres_index" | node -e '
+const fs = require("node:fs");
+const index = JSON.parse(fs.readFileSync(0, "utf8"));
+const matches = index.manifests.filter(m => m.platform.os === "linux" && m.platform.architecture === process.argv[1]);
+if (matches.length !== 1 || !/^sha256:[a-f0-9]{64}$/.test(matches[0].digest)) {
+  throw new Error("Pinned PostgreSQL index must contain exactly one requested platform");
+}
+process.stdout.write(matches[0].digest);
+' "$platform")"
+export TEST_POSTGRES_IMAGE="${postgres_index%%@*}@${postgres_digest}"
 proof_dir="$(mktemp -d)"
 cleanup() {
   docker compose logs --no-color > "$proof_dir/containers.log" 2>&1 || true
@@ -25,6 +38,7 @@ docker buildx build --platform "linux/$platform" --load -t "$APP_IMAGE" .
 test "$(docker image inspect "$APP_IMAGE" --format '{{.Architecture}}')" = "$platform"
 test "$(docker run --rm --entrypoint id "$APP_IMAGE" -u)" != 0
 docker compose pull --policy always db
+test "$(docker image inspect "$TEST_POSTGRES_IMAGE" --format '{{.Architecture}}')" = "$platform"
 docker compose up -d --wait db
 # No migration: readiness must report failure while liveness remains available.
 docker compose up -d app
