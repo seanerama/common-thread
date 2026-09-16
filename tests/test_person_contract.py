@@ -174,3 +174,44 @@ def test_html_validation_redirect_escape_and_no_get_writes(authenticated):
     count = Person.objects.count()
     authenticated.get("/people/new/?display_name=Unwanted")
     assert Person.objects.count() == count
+
+
+@pytest.mark.parametrize("media", ["form", "multipart"])
+@pytest.mark.parametrize("logged_in", [True, False])
+def test_oversized_form_media_keeps_api_errors(authenticated, media, logged_in):
+    from django.test.client import BOUNDARY, encode_multipart
+
+    from crm.models import Party, Person
+
+    client = authenticated if logged_in else Client(enforce_csrf_checks=True)
+    if not logged_in:
+        client.get("/login/")
+    if media == "form":
+        content_type = "application/x-www-form-urlencoded"
+        body = "display_name=" + "a" * 17000
+    else:
+        content_type = f"multipart/form-data; boundary={BOUNDARY}"
+        body = encode_multipart(BOUNDARY, {"display_name": "a" * 17000})
+    before = (Party.objects.count(), Person.objects.count())
+    response = client.post(
+        "/api/v1/people/",
+        body,
+        content_type=content_type,
+        HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value,
+    )
+    assert_error(
+        response,
+        413 if logged_in else 401,
+        "payload_too_large" if logged_in else "unauthenticated",
+    )
+    assert (Party.objects.count(), Person.objects.count()) == before
+
+
+def test_malformed_multipart_rejected_before_csrf_parser(authenticated):
+    response = authenticated.post(
+        "/api/v1/people/",
+        b"malformed multipart without a boundary",
+        content_type="multipart/form-data",
+        HTTP_X_CSRFTOKEN=authenticated.cookies["csrftoken"].value,
+    )
+    assert_error(response, 415, "unsupported_media_type")

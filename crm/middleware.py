@@ -37,3 +37,30 @@ class RequestLogMiddleware:
             },
         )
         return response
+
+
+class PersonApiInputMiddleware:
+    """Bound the API body before CSRF can parse form or multipart media."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path == "/api/v1/people/" and request.method == "POST":
+            from django.core.exceptions import PermissionDenied, RequestDataTooBig
+
+            from .services import workspace_for
+            from .views import error
+
+            try:
+                workspace_for(request.user)
+            except PermissionDenied:
+                return error("unauthenticated", 401, "Authentication required")
+            try:
+                if len(request.body) > 16384:
+                    return error("payload_too_large", 413)
+            except RequestDataTooBig:
+                return error("payload_too_large", 413)
+            if request.content_type != "application/json":
+                return error("unsupported_media_type", 415)
+        return self.get_response(request)

@@ -45,6 +45,7 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "crm.middleware.PersonApiInputMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
 ]
 ROOT_URLCONF = "common_thread.urls"
