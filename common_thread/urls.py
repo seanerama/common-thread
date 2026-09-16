@@ -27,6 +27,34 @@ urlpatterns = [
         "people/<str:person_id>/notes/<str:note_id>/history/",
         views.context_note_history,
     ),
+    path("organizations/", views.party_list, {"kind": "organization"}),
+    path("organizations/new/", views.party_new, {"kind": "organization"}),
+    path("organizations/<str:party_id>/", views.party_detail, {"kind": "organization"}),
+    path(
+        "organizations/<str:party_id>/edit/", views.party_edit, {"kind": "organization"}
+    ),
+    path(
+        "organizations/<str:party_id>/archive/",
+        views.party_archive,
+        {"kind": "organization"},
+    ),
+    path(
+        "organizations/<str:party_id>/restore/",
+        views.party_archive,
+        {"kind": "organization", "archived": False},
+    ),
+    path("households/", views.party_list, {"kind": "household"}),
+    path("households/new/", views.party_new, {"kind": "household"}),
+    path("households/<str:party_id>/", views.party_detail, {"kind": "household"}),
+    path("households/<str:party_id>/edit/", views.party_edit, {"kind": "household"}),
+    path(
+        "households/<str:party_id>/archive/", views.party_archive, {"kind": "household"}
+    ),
+    path(
+        "households/<str:party_id>/restore/",
+        views.party_archive,
+        {"kind": "household", "archived": False},
+    ),
     path("api/v1/people/", views.api_create),
     path("api/v1/people/<str:person_id>/", views.api_detail),
     path("health/live/", views.live),

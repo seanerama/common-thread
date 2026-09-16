@@ -243,6 +243,117 @@ def search_people(user, q="", archived="exclude", page="1"):
     return paginator.page(number)
 
 
+PARTY_TYPES = {
+    "organization": ("organization", "organization"),
+    "household": ("household", "household"),
+}
+
+
+def _party_type(kind):
+    try:
+        return PARTY_TYPES[kind]
+    except KeyError:
+        raise ValueError("Unsupported party type") from None
+
+
+@transaction.atomic
+def create_typed_party(user, kind, display_name, is_client):
+    from .models import Household, Organization
+
+    relation, _ = _party_type(kind)
+    if not isinstance(is_client, bool):
+        raise ValidationError({"is_client": ["Choose a client status."]})
+    party = Party.objects.create(
+        workspace=workspace_for(user),
+        kind=kind,
+        display_name=validate_name(display_name),
+        is_client=is_client,
+    )
+    {"organization": Organization, "household": Household}[relation].objects.create(
+        party=party
+    )
+    return party
+
+
+def get_typed_party(user, kind, party_id):
+    relation, _ = _party_type(kind)
+    try:
+        party_id = UUID(str(party_id))
+    except (ValueError, TypeError, AttributeError):
+        raise Http404 from None
+    filters = {
+        "id": party_id,
+        "workspace": workspace_for(user),
+        "kind": kind,
+        f"{relation}__isnull": False,
+    }
+    try:
+        return Party.objects.get(**filters)
+    except Party.DoesNotExist:
+        raise Http404 from None
+
+
+def search_typed_parties(user, kind, q="", archived="exclude", page="1"):
+    from django.core.paginator import Page, Paginator
+
+    relation, _ = _party_type(kind)
+    if (
+        not isinstance(q, str)
+        or len(q) > 200
+        or invalid_text(q)
+        or archived not in ("exclude", "include", "only")
+        or not str(page).isascii()
+        or not str(page).isdecimal()
+        or not str(page).strip("0")
+    ):
+        raise ValidationError({"query": ["Invalid search or page."]})
+    rows = Party.objects.filter(
+        workspace=workspace_for(user), kind=kind, **{f"{relation}__isnull": False}
+    )
+    if archived != "include":
+        rows = rows.filter(archived_at__isnull=archived == "exclude")
+    if q:
+        rows = rows.filter(display_name__icontains=q)
+    paginator = Paginator(rows.order_by("display_name", "id"), 50)
+    digits = str(page).lstrip("0")
+    number = int(digits) if len(digits) < 20 else paginator.num_pages + 1
+    if number > paginator.num_pages:
+        return Page([], number, paginator)
+    return paginator.page(number)
+
+
+def locked_typed_party(user, kind, party_id):
+    party = get_typed_party(user, kind, party_id)
+    return Party.objects.select_for_update().get(
+        pk=party.pk, workspace=party.workspace, kind=kind
+    )
+
+
+@transaction.atomic
+def update_typed_party(user, kind, party_id, expected_version, display_name, is_client):
+    party = locked_typed_party(user, kind, party_id)
+    check_version(party, expected_version)
+    if party.archived_at is not None:
+        raise ValidationError(
+            {"__all__": [f"Restore this {kind} before making changes."]}
+        )
+    if not isinstance(is_client, bool):
+        raise ValidationError({"is_client": ["Choose a client status."]})
+    party.display_name = validate_name(display_name)
+    party.is_client = is_client
+    return advance(party)
+
+
+@transaction.atomic
+def set_typed_party_archived(user, kind, party_id, expected_version, archived):
+    from django.utils import timezone
+
+    party = locked_typed_party(user, kind, party_id)
+    check_version(party, expected_version)
+    party.archived_at = timezone.now() if archived else None
+    return advance(party)
+
+
 def validate_note(body, source):
     errors = {}
     for field, value, limit in (("body", body, 20000), ("source", source, 500)):

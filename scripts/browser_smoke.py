@@ -182,6 +182,79 @@ def notes_off(page, base_url, record):
     page.goto(base_url + record["path"])
 
 
+def party_directory_read(page, base_url, record):
+    for key in ("organization", "household"):
+        party = record[key]
+        response = page.goto(base_url + party["path"])
+        assert response.status == 200
+        expect(
+            page.get_by_role("heading", name=party["display_name"], exact=True)
+        ).to_be_visible()
+        expect(page.get_by_text("Client", exact=False)).to_be_visible()
+
+
+def party_directory_on(page, base_url, record, read_only):
+    if read_only:
+        party_directory_read(page, base_url, record)
+        return
+    for key, prefix in (("organization", "organizations"), ("household", "households")):
+        singular = key
+        name = f"Fictional {singular.title()} {uuid4().hex[:10]}"
+        page.goto(f"{base_url}/{prefix}/new/")
+        page.locator('[name="display_name"]').fill(name)
+        page.locator('[name="is_client"]').check()
+        page.get_by_role("button", name=f"Save {singular}", exact=True).click()
+        expect(page).to_have_url(
+            re.compile(re.escape(base_url) + rf"/{prefix}/[0-9a-f-]+/")
+        )
+        party = {"path": page.url.removeprefix(base_url), "display_name": name}
+        record[key] = party
+        page.get_by_role("link", name=f"Edit {singular}", exact=True).click()
+        stale = page.context.new_page()
+        try:
+            stale.goto(page.url)
+            party["display_name"] += " Updated"
+            page.locator('[name="display_name"]').fill(party["display_name"])
+            page.get_by_role("button", name=f"Save {singular}", exact=True).click()
+            stale.locator('[name="display_name"]').fill("Fictional stale overwrite")
+            with stale.expect_navigation() as conflict:
+                stale.get_by_role("button", name=f"Save {singular}", exact=True).click()
+            assert conflict.value.status == 409
+            expect(stale.get_by_role("alert")).to_contain_text(
+                re.compile("reload", re.I)
+            )
+            expect(stale.locator('[name="display_name"]')).to_have_value(
+                "Fictional stale overwrite"
+            )
+        finally:
+            stale.close()
+        page.goto(f"{base_url}/{prefix}/?q={party['display_name'].replace(' ', '+')}")
+        page.get_by_role("link", name=party["display_name"], exact=True).click()
+        page.get_by_role("button", name=f"Archive {singular}", exact=True).click()
+        page.goto(f"{base_url}/{prefix}/?q={party['display_name'].replace(' ', '+')}")
+        expect(
+            page.get_by_role("link", name=party["display_name"], exact=True)
+        ).to_have_count(0)
+        page.locator('[name="archived"]').select_option("only")
+        page.get_by_role("button", name="Search", exact=True).click()
+        page.get_by_role("link", name=party["display_name"], exact=True).click()
+        page.get_by_role("button", name=f"Restore {singular}", exact=True).click()
+    party_directory_read(page, base_url, record)
+
+
+def party_directory_off(page, base_url, record):
+    for name in ("Organizations", "Households"):
+        expect(page.get_by_role("link", name=name, exact=True)).to_have_count(0)
+    paths = ["/organizations/", "/households/"]
+    paths.extend(
+        record[key]["path"] for key in ("organization", "household") if key in record
+    )
+    for path in paths:
+        response = page.goto(base_url + path)
+        assert response.status == 404
+    page.goto(base_url + record["path"])
+
+
 def smoke(
     base_url,
     username,
@@ -190,6 +263,7 @@ def smoke(
     read_file=None,
     people_management="off",
     context_notes="off",
+    party_directory="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -249,11 +323,15 @@ def smoke(
                     notes_on(page, base_url, record)
             else:
                 notes_off(page, base_url, record)
+            if party_directory == "on":
+                party_directory_on(page, base_url, record, bool(read_file))
+            else:
+                party_directory_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
             print(
                 f"Browser smoke passed: people management {people_management}; "
-                f"context notes {context_notes}"
+                f"context notes {context_notes}; party directory {party_directory}"
             )
         finally:
             browser.close()
@@ -269,6 +347,7 @@ def main():
         help="Assert flag state; on exercises Stage 1 workflows",
     )
     parser.add_argument("--context-notes", choices=("on", "off"), default="off")
+    parser.add_argument("--party-directory", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -281,6 +360,7 @@ def main():
         args.read_file,
         args.people_management,
         args.context_notes,
+        args.party_directory,
     )
 
 

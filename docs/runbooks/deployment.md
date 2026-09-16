@@ -166,3 +166,24 @@ reenable/recreate and reread to prove data survived the kill switch. Set
 `--people-management off` when that separate feature is disabled. The browser gate
 runs this restart sequence; both architecture container gates additionally read
 current notes and history after image-container replacement and database restore.
+
+## Stage 3 party-directory acceptance
+
+`PARTY_DIRECTORY_ENABLED` defaults to `false` in the application, Compose, and the
+example environment. Set it to `true` in the external environment file, run the
+one-shot migration from the tested image, and recreate the application container.
+Changing the environment file without restarting the process does not change the flag.
+
+With operator smoke credentials exported, run:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --party-directory on --record-file /tmp/party-directory-proof.json
+```
+
+The smoke creates, edits, searches, archives, restores, and rereads one fictional
+organization and household. After application replacement or database restore, use
+`--read-file` with the same proof file. Disable the flag, recreate the application,
+and run with `--party-directory off` to prove navigation and direct routes are hidden
+without deleting data; then reenable, recreate, and reread the records. This flag is
+independent of people management and context notes.

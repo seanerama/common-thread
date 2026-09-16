@@ -117,3 +117,18 @@ def test_context_notes_runtime_flag_defaults_off(production_env, flag, expected)
     )
     assert result.returncode == 0
     assert result.stdout.strip() == str(expected)
+
+
+@pytest.mark.parametrize(
+    "flag,expected", [(None, False), ("false", False), ("true", True)]
+)
+def test_party_directory_runtime_flag_defaults_off(production_env, flag, expected):
+    production_env.pop("PARTY_DIRECTORY_ENABLED", None)
+    if flag is not None:
+        production_env["PARTY_DIRECTORY_ENABLED"] = flag
+    result = run_python(
+        production_env,
+        "from django.conf import settings; print(settings.PARTY_DIRECTORY_ENABLED)",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(expected)

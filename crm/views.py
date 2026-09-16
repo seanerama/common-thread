@@ -15,7 +15,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from . import services
-from .forms import ContactPointForm, PersonForm, VersionForm
+from .forms import ContactPointForm, PartyCreateForm, PartyForm, PersonForm, VersionForm
 from .models import LoginAttempt
 
 
@@ -453,6 +453,216 @@ def notes_enabled(view):
         return view(request, *args, **kwargs)
 
     return wrapped
+
+
+def party_directory_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.PARTY_DIRECTORY_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+PARTY_UI = {
+    "organization": ("organizations", "Organization", "Organizations"),
+    "household": ("households", "Household", "Households"),
+}
+
+
+def _party_ui(kind):
+    try:
+        return PARTY_UI[kind]
+    except KeyError:
+        raise Http404 from None
+
+
+def _strict_form_post(request, allowed):
+    return not (set(request.POST) - (set(allowed) | {"csrfmiddlewaretoken"})) and all(
+        len(request.POST.getlist(key)) == 1 for key in request.POST
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@party_directory_enabled
+def party_list(request, kind):
+    prefix, singular, plural = _party_ui(kind)
+    query = request.GET.get("q", "")
+    archived = request.GET.get("archived", "exclude")
+    try:
+        if set(request.GET) - {"q", "archived", "page"} or any(
+            len(request.GET.getlist(key)) != 1 for key in request.GET
+        ):
+            raise ValidationError("Invalid query")
+        page = services.search_typed_parties(
+            request.user, kind, query, archived, request.GET.get("page", "1")
+        )
+    except ValidationError:
+        return render(
+            request,
+            "party_list.html",
+            {
+                "prefix": prefix,
+                "plural": plural,
+                "singular_lower": singular.lower(),
+                "q": query,
+                "archived": archived,
+                "query_error": (
+                    "Enter a search of up to 200 characters, a valid archive "
+                    "filter, and a positive page number."
+                ),
+            },
+            status=400,
+        )
+    return render(
+        request,
+        "party_list.html",
+        {
+            "prefix": prefix,
+            "plural": plural,
+            "singular_lower": singular.lower(),
+            "parties": page,
+            "page_obj": page,
+            "q": query,
+            "archived": archived,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@party_directory_enabled
+def party_new(request, kind):
+    prefix, singular, _ = _party_ui(kind)
+    if request.method == "POST" and not _strict_form_post(
+        request, {"display_name", "is_client"}
+    ):
+        return HttpResponse("Invalid request", status=400)
+    form = PartyCreateForm(request.POST if request.method == "POST" else None)
+    if request.method == "POST" and form.is_valid():
+        try:
+            party = services.create_typed_party(request.user, kind, **form.cleaned_data)
+        except ValidationError as exc:
+            for field, messages in exc.message_dict.items():
+                form.add_error(field if field in form.fields else None, messages)
+        else:
+            return redirect303(f"/{prefix}/{party.id}/")
+    return render(
+        request,
+        "party_form.html",
+        {
+            "form": form,
+            "title": f"Add {singular.lower()}",
+            "submit_label": f"Save {singular.lower()}",
+            "cancel_path": f"/{prefix}/",
+        },
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@party_directory_enabled
+def party_detail(request, kind, party_id):
+    prefix, singular, _ = _party_ui(kind)
+    party = services.get_typed_party(request.user, kind, party_id)
+    return render(
+        request,
+        "party_detail.html",
+        {
+            "party": party,
+            "prefix": prefix,
+            "singular": singular,
+            "singular_lower": singular.lower(),
+        },
+    )
+
+
+def _party_workflow_form(request, kind, party, form, title, save, submit_label):
+    prefix, singular, _ = _party_ui(kind)
+    status = 200
+    conflict = False
+    if request.method == "POST" and form.is_valid():
+        try:
+            save(form.cleaned_data)
+        except services.Conflict:
+            status, conflict = 409, True
+            form.add_error(
+                None,
+                "This record changed. Reload and review the latest version before "
+                "saving again. Your submitted values are shown below.",
+            )
+        except ValidationError as exc:
+            for field, messages in exc.message_dict.items():
+                form.add_error(field if field in form.fields else None, messages)
+        else:
+            return redirect303(f"/{prefix}/{party.id}/")
+    return render(
+        request,
+        "party_form.html",
+        {
+            "party": party,
+            "form": form,
+            "title": title,
+            "submit_label": submit_label,
+            "conflict": conflict,
+            "cancel_path": f"/{prefix}/{party.id}/",
+            "singular_lower": singular.lower(),
+        },
+        status=status,
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@party_directory_enabled
+def party_edit(request, kind, party_id):
+    _, singular, _ = _party_ui(kind)
+    party = services.get_typed_party(request.user, kind, party_id)
+    if request.method == "POST" and not _strict_form_post(
+        request, {"display_name", "is_client", "expected_version"}
+    ):
+        return HttpResponse("Invalid request", status=400)
+    form = PartyForm(
+        request.POST if request.method == "POST" else None,
+        initial={
+            "display_name": party.display_name,
+            "is_client": party.is_client,
+            "expected_version": party.version,
+        },
+    )
+    return _party_workflow_form(
+        request,
+        kind,
+        party,
+        form,
+        f"Edit {singular.lower()}",
+        lambda data: services.update_typed_party(request.user, kind, party_id, **data),
+        f"Save {singular.lower()}",
+    )
+
+
+@require_http_methods(["POST"])
+@authorized
+@party_directory_enabled
+def party_archive(request, kind, party_id, archived=True):
+    _, singular, _ = _party_ui(kind)
+    party = services.get_typed_party(request.user, kind, party_id)
+    if not _strict_form_post(request, {"expected_version"}):
+        return HttpResponse("Invalid request", status=400)
+    action = "Archive" if archived else "Restore"
+    return _party_workflow_form(
+        request,
+        kind,
+        party,
+        VersionForm(request.POST),
+        f"{action} {singular.lower()}",
+        lambda data: services.set_typed_party_archived(
+            request.user, kind, party_id, archived=archived, **data
+        ),
+        f"{action} {singular.lower()}",
+    )
 
 
 @require_http_methods(["GET", "POST"])
