@@ -55,5 +55,7 @@ missing gates fail. CI additionally scans Git history with Gitleaks.
 See [the deployment runbook](docs/runbooks/deployment.md) for portable containers,
 private testing-host deployment, operator smoke, backup, restore, and rollback.
 
-The [initial backlog](docs/handoff/initial-backlog.md) links the stage specifications
-and GitHub work items for Verity Build, starting with Stage 0.
+The [next backlog](docs/handoff/relationship-workflow-backlog.md) plans stages 3–7:
+organizations/households, relationships, shared interactions, commitments, and a
+unified person overview. Start with Stage 3. The
+[initial backlog](docs/handoff/initial-backlog.md) retains the foundation intake.
