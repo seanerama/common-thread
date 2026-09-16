@@ -1,35 +1,79 @@
 name: CI
-# Common Thread — documentation-stage hygiene and secret scanning.
-# Local and CI gates share .verity/gates.json. Add application gates when
-# implementation begins; hygiene does not claim application correctness.
 on:
   pull_request:
   push:
     branches: [main]
 permissions:
   contents: read
-  pull-requests: read # gitleaks lists PR commits via the API on pull_request
+  pull-requests: read
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  # Missing or failing gate definitions fail the build.
   gates:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+        env:
+          POSTGRES_DB: common_thread
+          POSTGRES_USER: common_thread
+          POSTGRES_PASSWORD: ci-ephemeral-database-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U common_thread -d common_thread"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://common_thread:ci-ephemeral-database-only@localhost:5432/common_thread
+      DJANGO_SECRET_KEY: ci-only-not-used-outside-disposable-runner
+      APP_ENV: test
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+      CSRF_TRUSTED_ORIGINS: http://localhost:18009
     steps:
       - uses: actions/checkout@v4
-      - name: Run the committed gate definition (.verity/gates.json)
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.10.12'
+          python-version: '3.13'
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - name: Install locked test dependencies and real Chromium
+        run: |
+          uv sync --frozen
+          uv run playwright install --with-deps chromium
+      - name: Run every committed gate (ARM runs under QEMU)
         run: node .verity/run-gates.cjs
+      - name: Publish the exact tested images
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for arch in amd64 arm64; do
+            docker tag "common-thread:ci-${GITHUB_SHA}-${arch}" "${image}:sha-${GITHUB_SHA}-${arch}"
+            docker push "${image}:sha-${GITHUB_SHA}-${arch}"
+          done
+          docker buildx imagetools create -t "${image}:sha-${GITHUB_SHA}" "${image}:sha-${GITHUB_SHA}-amd64" "${image}:sha-${GITHUB_SHA}-arm64"
+          docker buildx imagetools inspect "${image}:sha-${GITHUB_SHA}" | tee artifact-digests.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: tested-image-digests
+          path: artifact-digests.txt
+          if-no-files-found: ignore
   structure:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Required files present
-        run: |
-          for f in README.md LICENSE; do
-            test -f "$f" || { echo "missing required file: $f"; exit 1; }
-          done
-          echo "structure ok"
+        run: test -s README.md && test -s LICENSE
   secret-scan:
     runs-on: ubuntu-latest
     steps:

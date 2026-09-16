@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:17-bookworm@sha256:051f7b7b3abdd564d5d1bd1e8c4b9c1b6e77087d1dd22020ede611c096a272e0
+    environment:
+      POSTGRES_DB: common_thread
+      POSTGRES_USER: common_thread
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U common_thread -d common_thread"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  app:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the tested artifact}
+    environment: &app-environment
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+      APP_ENV: ${APP_ENV:-production}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?Set CSRF_TRUSTED_ORIGINS}
+      PORT: 8000
+      TRUST_PROXY_HTTPS: ${TRUST_PROXY_HTTPS:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/health/ready/', headers={'Host':'localhost'}), timeout=3)"]
+      interval: 5s
+      timeout: 15s
+      retries: 20
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 30s
+    restart: unless-stopped
+  migrate:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the tested artifact}
+    environment: *app-environment
+    command: [python, manage.py, migrate, --noinput]
+    profiles: [release]
+    depends_on:
+      db:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  postgres-data:
