@@ -1,1 +1,24 @@
-{% extends "base.html" %}{% block content %}<h1>{{ person.display_name }}</h1><p>Person saved.</p><a href="/people/">Back to people</a>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ person.display_name }}</h1>
+{% if management_enabled %}
+<p>{% if person.is_client %}Client{% else %}Not a client{% endif %}</p>
+{% if person.archived_at %}
+<p>This person is archived. Restore them to make changes.</p>
+<form method="post" action="/people/{{ person.id }}/restore/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ person.version }}"><button type="submit">Restore person</button></form>
+{% else %}
+<p><a href="/people/{{ person.id }}/edit/">Edit person</a></p>
+<form method="post" action="/people/{{ person.id }}/archive/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ person.version }}"><button type="submit">Archive person</button></form>
+{% endif %}
+<h2>Contact points</h2>
+{% if not person.archived_at %}<a href="/people/{{ person.id }}/contact-points/new/">Add contact</a>{% endif %}
+<ul>{% for point in contact_points %}<li>
+<strong>{{ point.get_kind_display }}</strong>: {{ point.value }}{% if point.label %} ({{ point.label }}){% endif %}
+{% if not person.archived_at %}
+<a href="/people/{{ person.id }}/contact-points/{{ point.id }}/edit/">Edit contact</a>
+<form method="post" action="/people/{{ person.id }}/contact-points/{{ point.id }}/archive/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ point.version }}"><button type="submit">Archive contact</button></form>
+{% endif %}
+</li>{% empty %}<li>No contact points yet.</li>{% endfor %}</ul>
+{% else %}<p>Person saved.</p>{% endif %}
+<p><a href="/people/">Back to people</a></p>
+{% endblock %}

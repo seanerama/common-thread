@@ -86,3 +86,18 @@ def test_non_https_csrf_origin_rejected(production_env):
 
 def test_clickjacking_header(client):
     assert client.get("/login/").headers["X-Frame-Options"] == "DENY"
+
+
+@pytest.mark.parametrize(
+    "flag,expected", [(None, False), ("false", False), ("true", True)]
+)
+def test_people_management_runtime_flag_defaults_off(production_env, flag, expected):
+    production_env.pop("PEOPLE_MANAGEMENT_ENABLED", None)
+    if flag is not None:
+        production_env["PEOPLE_MANAGEMENT_ENABLED"] = flag
+    result = run_python(
+        production_env,
+        "from django.conf import settings; print(settings.PEOPLE_MANAGEMENT_ENABLED)",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(expected)

@@ -64,3 +64,23 @@ class PersonApiInputMiddleware:
             if request.content_type != "application/json":
                 return error("unsupported_media_type", 415)
         return self.get_response(request)
+
+
+class PeopleManagementGateMiddleware:
+    """Reject disabled additive routes before CSRF parses an unsafe request."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        import re
+
+        from django.conf import settings
+        from django.http import HttpResponse
+
+        if not settings.PEOPLE_MANAGEMENT_ENABLED and re.fullmatch(
+            r"/people/[^/]+/(?:edit|archive|restore|contact-points/new|contact-points/[^/]+/(?:edit|archive))/",
+            request.path_info,
+        ):
+            return HttpResponse("Not found", status=404)
+        return self.get_response(request)

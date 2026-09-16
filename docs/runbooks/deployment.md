@@ -110,3 +110,33 @@ the next attempt returns 429 with Retry-After. Behind the trusted tailnet proxy,
 users may share a source bucket. Forwarded client IP headers are not trusted for
 rate-limit identity. Use `python manage.py changepassword USERNAME` interactively
 inside the app container for an explicit operator password reset.
+
+## Stage 1 people management acceptance and kill switch
+
+`PEOPLE_MANAGEMENT_ENABLED` defaults to `false` in the application and Compose.
+Set it explicitly to `true` in the private runtime environment to enable person
+editing, contact management, search, archive and restore. Apply environment changes
+with `docker compose --env-file app.env up -d --force-recreate --wait app`.
+Changing the file alone does not update running processes. No image rebuild is needed.
+
+With operator smoke credentials exported, run against the deployed URL:
+
+```bash
+uv run python scripts/browser_smoke.py --base-url https://HOST.ts.net:8445 --people-management on --record-file /tmp/ct-managed-person.json
+```
+
+This creates a fictional person and contact, updates them, checks two stale forms
+return visible conflicts without overwriting accepted changes, searches by contact,
+archives/restores the same person, and archives a second contact. Retain the private
+proof file for subsequent
+restart and backup/restore verification with `--read-file` and
+`--people-management on`; this read mode does not repeat the edits.
+
+To disable Stage 1, set the flag to `false` and recreate the app. Run the same
+read command with `--people-management off` to verify the original person detail
+remains readable, controls disappear, and edit routes return 404. The default smoke
+mode is `off`, preserving the Stage 0 create/read/reload proof. Reenable the flag,
+recreate, and use `--people-management on --read-file /tmp/ct-managed-person.json`
+to verify the contact persisted through the toggle. Disabling the flag does not
+remove data. Local browser gates and both amd64/arm64 container gates execute this
+off/on/off/on sequence; container gates also read the managed contact after restore.

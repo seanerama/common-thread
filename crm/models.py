@@ -61,3 +61,27 @@ class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     failures = models.PositiveIntegerField(default=0)
     window_start = models.DateTimeField()
+
+
+class ContactPoint(Record):
+    party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="contact_points"
+    )
+    kind = models.CharField(
+        max_length=5, choices=[("email", "email"), ("phone", "phone")]
+    )
+    value = models.CharField(max_length=320)
+    label = models.TextField(null=True, default=None)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="contact_positive_version"
+            ),
+            models.CheckConstraint(
+                condition=Q(kind__in=["email", "phone"]), name="contact_valid_kind"
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"], name="contact_workspace_id"
+            ),
+        ]
