@@ -23,7 +23,12 @@ The project is independent of `kcrealestate`. Kelsey Knows Omaha is intended to
 become an integration consumer once the standalone foundation is useful.
 
 Project identity is locked as `seanerama/common-thread` in `.verity/identity.json`.
-The implementation stack and integration contracts remain open.
+The design selects Django and PostgreSQL in portable containers, with mini-hp01
+as the testing target. Other projects can deploy an instance or integrate through
+future versioned APIs; production hosting remains open.
+See the [Architect handoff](docs/architect-handoff.md) for ADRs, frozen core
+contracts, and the walking-skeleton definition. External integration contracts
+remain deferred.
 
 ## Repository hygiene
 

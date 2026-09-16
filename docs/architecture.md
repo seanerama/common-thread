@@ -1,13 +1,15 @@
-# Architecture proposal
+# Common Thread architecture
 
-Status: initial proposal, not an implemented or finalized architecture.
+Status: architecture specified; portable container deployment selected for testing;
+no application implemented.
 
 ## Application boundary
 
 Build the CRM as an independently runnable application with its own persistence
 and versioned API. Begin with a modular application rather than distributing
-its core across multiple services. Select the implementation stack when starting
-the first executable milestone.
+its core across multiple services. Use a Django server-rendered modular monolith
+and PostgreSQL as specified in the ADRs. See the [Architect handoff](architect-handoff.md)
+for decisions, frozen contracts, and Stage 0.
 
 Keep people, organizations, households, relationships, interactions, contextual
 notes, and commitments in the common domain. Professional modules can add typed
@@ -63,6 +65,23 @@ should continue to work during a CRM outage.
 4. Validate the complete first milestone as a standalone product.
 5. Define and implement the first Kelsey Knows Omaha integration contract.
 
-Open design decisions include deployment model, detailed access
-rules, extension mechanism, and whether integration initially opens the standalone
-interface or embeds selected CRM views.
+Open design decisions include production hosting, future team-sharing rules,
+extension mechanism, and whether integrations initially open the standalone
+interface or embed selected CRM views.
+
+
+## Runtime topology
+
+```mermaid
+flowchart LR
+    Browser[Browser] --> TLS[TLS ingress]
+    TLS --> App[Django application]
+    App --> DB[(PostgreSQL)]
+```
+
+One app owns templates, same-origin JSON adapters, authorization, and domain services.
+PostgreSQL owns persistent records and sessions. No queue, cache, AI service, or
+separate frontend is required. The ingress implementation follows the selected
+host. mini-hp01 hosts the testing Compose stack; runtime configuration keeps the
+image usable by other projects and container hosts. See
+[ADR 0004](adr/0004-choose-a-portable-container-and-mini-hp01-testing-deployment.md).

@@ -156,6 +156,14 @@ Do not migrate or modify Kelsey Knows Omaha as part of the initial CRM milestone
 Specify field ownership, matching, failure behavior, and retry semantics when the
 integration becomes an active implementation task.
 
+## Architecture update — September 16, 2026 UTC
+
+The [Architect handoff](docs/architect-handoff.md) and its ADRs now specify the stack,
+private-workspace access, frozen contracts, and Stage 0. They supersede earlier
+open-stack guidance in this document. The owner selected mini-hp01 for testing and requires portable containers for reuse
+across projects (ADR 0004). Architecture is ready for Verity Plan; the first implementation
+is the thin Stage 0, followed by the complete person workflow described above.
+
 ## Starting instructions for the next coding session
 
 Read this handoff and the supporting documents, inspect the current repository,
