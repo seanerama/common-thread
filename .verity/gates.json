@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "gates": [
+    {
+      "name": "repository-hygiene",
+      "command": "node .verity/check-hygiene.cjs"
+    }
+  ]
+}

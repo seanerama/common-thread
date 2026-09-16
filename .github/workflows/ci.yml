@@ -1,0 +1,42 @@
+name: CI
+# Common Thread — documentation-stage hygiene and secret scanning.
+# Local and CI gates share .verity/gates.json. Add application gates when
+# implementation begins; hygiene does not claim application correctness.
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read # gitleaks lists PR commits via the API on pull_request
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  # Missing or failing gate definitions fail the build.
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the committed gate definition (.verity/gates.json)
+        run: node .verity/run-gates.cjs
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required files present
+        run: |
+          for f in README.md LICENSE; do
+            test -f "$f" || { echo "missing required file: $f"; exit 1; }
+          done
+          echo "structure ok"
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
