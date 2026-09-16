@@ -9,5 +9,6 @@
 <p><a href="/{{ prefix }}/{{ party.id }}/edit/">Edit {{ singular_lower }}</a></p>
 <form method="post" action="/{{ prefix }}/{{ party.id }}/archive/">{% csrf_token %}<input type="hidden" name="expected_version" value="{{ party.version }}"><button type="submit">Archive {{ singular_lower }}</button></form>
 {% endif %}
+{% if relationships_enabled %}{% include "relationship_panels.html" %}{% endif %}
 <p><a href="/{{ prefix }}/">Back to {{ prefix }}</a></p>
 {% endblock %}

@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if relationship %}<p>{{ relationship.from_party.display_name }} → {{ relationship.to_party.display_name }}</p>{% else %}
+<form method="get" action="/relationships/new/">
+<label for="from-search">Find active from parties</label>
+<input id="from-search" name="from_q" value="{{ request.GET.from_q }}" maxlength="200">
+<label for="to-search">Find active to parties</label>
+<input id="to-search" name="to_q" value="{{ request.GET.to_q }}" maxlength="200">
+<button type="submit">Search parties</button>
+</form>
+<p>The selector shows up to 50 active parties. For employment and household membership, choose the person as the from party.</p>
+{% if from_selector_page.has_previous %}<a href="?from_q={{ request.GET.from_q|urlencode }}&amp;from_page={{ from_selector_page.previous_page_number }}&amp;to_q={{ request.GET.to_q|urlencode }}&amp;to_page={{ to_selector_page.number }}">Previous from parties</a>{% endif %}
+{% if from_selector_page.has_next %}<a href="?from_q={{ request.GET.from_q|urlencode }}&amp;from_page={{ from_selector_page.next_page_number }}&amp;to_q={{ request.GET.to_q|urlencode }}&amp;to_page={{ to_selector_page.number }}">Next from parties</a>{% endif %}
+{% if to_selector_page.has_previous %}<a href="?from_q={{ request.GET.from_q|urlencode }}&amp;from_page={{ from_selector_page.number }}&amp;to_q={{ request.GET.to_q|urlencode }}&amp;to_page={{ to_selector_page.previous_page_number }}">Previous to parties</a>{% endif %}
+{% if to_selector_page.has_next %}<a href="?from_q={{ request.GET.from_q|urlencode }}&amp;from_page={{ from_selector_page.number }}&amp;to_q={{ request.GET.to_q|urlencode }}&amp;to_page={{ to_selector_page.next_page_number }}">Next to parties</a>{% endif %}
+{% endif %}
+{% if form.errors %}<div class="error" role="alert">{{ form.non_field_errors }}{% for field in form %}{{ field.errors }}{% endfor %}</div>{% endif %}
+{% if conflict %}<p><a href="{{ cancel_path }}">Reload and review the current record</a></p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<p>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</p>{% endif %}{% endfor %}
+<p><button type="submit">{{ submit_label }}</button> <a href="{{ cancel_path }}">Cancel</a></p>
+</form>
+{% endblock %}

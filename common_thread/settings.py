@@ -120,3 +120,7 @@ CONTEXT_NOTES_ENABLED = (
 PARTY_DIRECTORY_ENABLED = (
     os.environ.get("PARTY_DIRECTORY_ENABLED", "false").lower() == "true"
 )
+
+RELATIONSHIPS_ENABLED = (
+    os.environ.get("RELATIONSHIPS_ENABLED", "false").lower() == "true"
+)

@@ -354,6 +354,198 @@ def set_typed_party_archived(user, kind, party_id, expected_version, archived):
     return advance(party)
 
 
+def _uuid(value, field="id"):
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        raise ValidationError({field: ["Select a valid party."]}) from None
+
+
+def _validate_relationship(kind, role, starts_on, ends_on):
+    errors = {}
+    if (
+        not isinstance(kind, str)
+        or not 1 <= len(kind.strip()) <= 80
+        or invalid_text(kind)
+    ):
+        errors["kind"] = ["Enter a relationship kind of 1–80 characters."]
+    if role is not None and (not isinstance(role, str) or invalid_text(role)):
+        errors["role"] = ["Enter a valid role."]
+    if starts_on is not None and ends_on is not None and ends_on < starts_on:
+        errors["ends_on"] = ["End date cannot be before start date."]
+    if errors:
+        raise ValidationError(errors)
+    return kind.strip(), role or None, starts_on, ends_on
+
+
+def _lock_parties(workspace, party_ids, require_active=False):
+    ids = sorted(set(party_ids), key=str)
+    parties = list(
+        Party.objects.select_for_update()
+        .filter(workspace=workspace, id__in=ids)
+        .order_by("id")
+    )
+    if len(parties) != len(ids):
+        raise ValidationError({"party": ["Select valid parties."]})
+    if require_active and any(party.archived_at is not None for party in parties):
+        raise ValidationError({"party": ["Select active parties."]})
+    return {party.id: party for party in parties}
+
+
+def relationship_selector(user, q="", page="1"):
+    from django.core.paginator import Page, Paginator
+
+    if (
+        not isinstance(q, str)
+        or len(q) > 200
+        or invalid_text(q)
+        or not str(page).isascii()
+        or not str(page).isdecimal()
+        or not str(page).strip("0")
+    ):
+        raise ValidationError({"query": ["Invalid selector search or page."]})
+    rows = Party.objects.filter(workspace=workspace_for(user), archived_at__isnull=True)
+    if q:
+        rows = rows.filter(display_name__icontains=q)
+    paginator = Paginator(rows.order_by("display_name", "id"), 50)
+    digits = str(page).lstrip("0")
+    number = int(digits) if len(digits) < 20 else paginator.num_pages + 1
+    if number > paginator.num_pages:
+        return Page([], number, paginator)
+    return paginator.page(number)
+
+
+def get_relationship(user, relationship_id):
+    from .models import Relationship
+
+    try:
+        relationship_id = UUID(str(relationship_id))
+    except (ValueError, TypeError, AttributeError):
+        raise Http404 from None
+    try:
+        return Relationship.objects.select_related("from_party", "to_party").get(
+            id=relationship_id, workspace=workspace_for(user)
+        )
+    except Relationship.DoesNotExist:
+        raise Http404 from None
+
+
+@transaction.atomic
+def create_relationship(
+    user, from_party_id, to_party_id, kind, role, starts_on, ends_on
+):
+    from .models import Relationship
+
+    workspace = workspace_for(user)
+    from_id = _uuid(from_party_id, "from_party_id")
+    to_id = _uuid(to_party_id, "to_party_id")
+    if from_id == to_id:
+        raise ValidationError({"to_party_id": ["Choose two different parties."]})
+    parties = _lock_parties(workspace, [from_id, to_id], require_active=True)
+    kind, role, starts_on, ends_on = _validate_relationship(
+        kind, role, starts_on, ends_on
+    )
+    return Relationship.objects.create(
+        workspace=workspace,
+        from_party=parties[from_id],
+        to_party=parties[to_id],
+        kind=kind,
+        role=role,
+        starts_on=starts_on,
+        ends_on=ends_on,
+    )
+
+
+def _locked_relationship(user, relationship_id, expected_version):
+    from .models import Relationship
+
+    existing = get_relationship(user, relationship_id)
+    _lock_parties(existing.workspace, [existing.from_party_id, existing.to_party_id])
+    relationship = Relationship.objects.select_for_update().get(
+        pk=existing.pk, workspace=existing.workspace
+    )
+    check_version(relationship, expected_version)
+    return relationship
+
+
+@transaction.atomic
+def update_relationship(
+    user, relationship_id, expected_version, kind, role, starts_on, ends_on
+):
+    relationship = _locked_relationship(user, relationship_id, expected_version)
+    values = _validate_relationship(kind, role, starts_on, ends_on)
+    (
+        relationship.kind,
+        relationship.role,
+        relationship.starts_on,
+        relationship.ends_on,
+    ) = values
+    return advance(relationship)
+
+
+@transaction.atomic
+def close_relationship(user, relationship_id, expected_version, ends_on):
+    relationship = _locked_relationship(user, relationship_id, expected_version)
+    _, _, _, ends_on = _validate_relationship(
+        relationship.kind, relationship.role, relationship.starts_on, ends_on
+    )
+    if ends_on is None:
+        raise ValidationError({"ends_on": ["Enter an end date."]})
+    relationship.ends_on = ends_on
+    return advance(relationship)
+
+
+def relationship_panels(user, party_id, page="1", ended_page="1"):
+    from django.core.paginator import Page, Paginator
+    from django.db.models import F, Q
+    from django.utils import timezone
+
+    workspace = workspace_for(user)
+    party_id = _uuid(party_id)
+    if not Party.objects.filter(pk=party_id, workspace=workspace).exists():
+        raise Http404
+
+    def page_number(value, paginator):
+        if (
+            not str(value).isascii()
+            or not str(value).isdecimal()
+            or not str(value).strip("0")
+        ):
+            raise ValidationError({"page": ["Enter a positive page number."]})
+        digits = str(value).lstrip("0")
+        number = int(digits) if len(digits) < 20 else paginator.num_pages + 1
+        return (
+            Page([], number, paginator)
+            if number > paginator.num_pages
+            else paginator.page(number)
+        )
+
+    from .models import Relationship
+
+    today = timezone.now().date()
+    base = (
+        Relationship.objects.filter(workspace=workspace)
+        .filter(Q(from_party_id=party_id) | Q(to_party_id=party_id))
+        .select_related("from_party", "to_party")
+    )
+    active = base.filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today)).order_by(
+        F("starts_on").asc(nulls_first=True), "id"
+    )
+    ended = base.filter(ends_on__lt=today).order_by("-ends_on", "id")
+    active_paginator, ended_paginator = Paginator(active, 50), Paginator(ended, 50)
+    active_result = page_number(page, active_paginator)
+    ended_result = page_number(ended_page, ended_paginator)
+    for row in active_result:
+        row.timeline_status = (
+            "future"
+            if row.starts_on is not None and row.starts_on > today
+            else "current"
+        )
+    for row in ended_result:
+        row.timeline_status = "ended"
+    return active_result, ended_result
+
+
 def validate_note(body, source):
     errors = {}
     for field, value, limit in (("body", body, 20000), ("source", source, 500)):

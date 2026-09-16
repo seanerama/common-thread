@@ -69,6 +69,41 @@ class Household(models.Model):
     )
 
 
+class Relationship(Record):
+    from_party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="relationships_from"
+    )
+    to_party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="relationships_to"
+    )
+    kind = models.CharField(max_length=80)
+    role = models.TextField(null=True, default=None)
+    starts_on = models.DateField(null=True, default=None)
+    ends_on = models.DateField(null=True, default=None)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="relationship_positive_version"
+            ),
+            models.CheckConstraint(
+                condition=~Q(from_party=models.F("to_party")),
+                name="relationship_distinct_endpoints",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(starts_on__isnull=True)
+                    | Q(ends_on__isnull=True)
+                    | Q(ends_on__gte=models.F("starts_on"))
+                ),
+                name="relationship_valid_dates",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"], name="relationship_workspace_id"
+            ),
+        ]
+
+
 class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     failures = models.PositiveIntegerField(default=0)

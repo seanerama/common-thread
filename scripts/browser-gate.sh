@@ -26,18 +26,21 @@ start_server() {
   done
   uv run python scripts/check_health.py http://localhost:18009
 }
-export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off
-export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --relationships off
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --record-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --record-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --read-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=true
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --relationships off --read-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory on --read-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --relationships on --read-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=false
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --read-file "$proof_dir/person.json"
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory on --relationships off --read-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true
+start_server
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --read-file "$proof_dir/person.json"

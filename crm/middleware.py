@@ -92,4 +92,8 @@ class PeopleManagementGateMiddleware:
             r"/(?:organizations|households)(?:/.*)?/", request.path_info
         ):
             return HttpResponse("Not found", status=404)
+        if not settings.RELATIONSHIPS_ENABLED and re.fullmatch(
+            r"/relationships(?:/.*)?/", request.path_info
+        ):
+            return HttpResponse("Not found", status=404)
         return self.get_response(request)

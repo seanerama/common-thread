@@ -15,7 +15,16 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from . import services
-from .forms import ContactPointForm, PartyCreateForm, PartyForm, PersonForm, VersionForm
+from .forms import (
+    ContactPointForm,
+    PartyCreateForm,
+    PartyForm,
+    PersonForm,
+    RelationshipCloseForm,
+    RelationshipCreateForm,
+    RelationshipForm,
+    VersionForm,
+)
 from .models import LoginAttempt
 
 
@@ -234,6 +243,24 @@ def person_detail(request, person_id):
     context["notes_enabled"] = settings.CONTEXT_NOTES_ENABLED
     if settings.CONTEXT_NOTES_ENABLED:
         context["notes"] = services.list_context_notes(request.user, person_id)
+    context["relationships_enabled"] = settings.RELATIONSHIPS_ENABLED
+    if settings.RELATIONSHIPS_ENABLED:
+        try:
+            if set(request.GET) - {
+                "relationships_page",
+                "relationships_ended_page",
+            } or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
+                raise ValidationError("Invalid relationship page")
+            context["relationships"], context["ended_relationships"] = (
+                services.relationship_panels(
+                    request.user,
+                    person_id,
+                    request.GET.get("relationships_page", "1"),
+                    request.GET.get("relationships_ended_page", "1"),
+                )
+            )
+        except ValidationError:
+            return HttpResponse("Invalid relationship page", status=400)
     return render(request, "person_detail.html", context)
 
 
@@ -567,15 +594,34 @@ def party_new(request, kind):
 def party_detail(request, kind, party_id):
     prefix, singular, _ = _party_ui(kind)
     party = services.get_typed_party(request.user, kind, party_id)
+    context = {
+        "party": party,
+        "prefix": prefix,
+        "singular": singular,
+        "singular_lower": singular.lower(),
+        "relationships_enabled": settings.RELATIONSHIPS_ENABLED,
+    }
+    if settings.RELATIONSHIPS_ENABLED:
+        try:
+            if set(request.GET) - {
+                "relationships_page",
+                "relationships_ended_page",
+            } or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
+                raise ValidationError("Invalid relationship page")
+            context["relationships"], context["ended_relationships"] = (
+                services.relationship_panels(
+                    request.user,
+                    party_id,
+                    request.GET.get("relationships_page", "1"),
+                    request.GET.get("relationships_ended_page", "1"),
+                )
+            )
+        except ValidationError:
+            return HttpResponse("Invalid relationship page", status=400)
     return render(
         request,
         "party_detail.html",
-        {
-            "party": party,
-            "prefix": prefix,
-            "singular": singular,
-            "singular_lower": singular.lower(),
-        },
+        context,
     )
 
 
@@ -712,4 +758,170 @@ def context_note_history(request, person_id, note_id):
         request,
         "note_history.html",
         {"person": person, "note": note, "revisions": revisions},
+    )
+
+
+def relationships_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.RELATIONSHIPS_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _relationship_post_valid(request, allowed):
+    return _strict_form_post(request, allowed)
+
+
+def _relationship_form_response(
+    request, relationship, form, title, save, submit_label, extra_context=None
+):
+    status = 200
+    conflict = False
+    if request.method == "POST" and form.is_valid():
+        try:
+            saved = save(form.cleaned_data)
+        except services.Conflict:
+            status, conflict = 409, True
+            form.add_error(
+                None,
+                "This record changed. Reload and review the latest version before "
+                "saving again. Your submitted values are shown below.",
+            )
+        except ValidationError as exc:
+            endpoint_error = any(
+                field in exc.message_dict
+                for field in ("party", "from_party_id", "to_party_id")
+            )
+            if endpoint_error:
+                return HttpResponse("Invalid related party", status=400)
+            for field, messages in exc.message_dict.items():
+                form.add_error(field if field in form.fields else None, messages)
+        else:
+            return redirect303(f"/relationships/{saved.id}/")
+    context = {
+        "relationship": relationship,
+        "form": form,
+        "title": title,
+        "submit_label": submit_label,
+        "conflict": conflict,
+        "cancel_path": (
+            f"/relationships/{relationship.id}/" if relationship else "/people/"
+        ),
+    }
+    context.update(extra_context or {})
+    return render(request, "relationship_form.html", context, status=status)
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@relationships_enabled
+def relationship_new(request):
+    if request.method == "POST" and not _relationship_post_valid(
+        request,
+        {"from_party_id", "to_party_id", "kind", "role", "starts_on", "ends_on"},
+    ):
+        return HttpResponse("Invalid request", status=400)
+    try:
+        selector_keys = {"from_q", "from_page", "to_q", "to_page"}
+        if set(request.GET) - selector_keys or any(
+            len(request.GET.getlist(key)) != 1 for key in request.GET
+        ):
+            raise ValidationError("Invalid selector query")
+        from_choices = services.relationship_selector(
+            request.user,
+            request.GET.get("from_q", ""),
+            request.GET.get("from_page", "1"),
+        )
+        to_choices = services.relationship_selector(
+            request.user,
+            request.GET.get("to_q", ""),
+            request.GET.get("to_page", "1"),
+        )
+    except ValidationError:
+        return HttpResponse("Invalid selector query", status=400)
+    form = RelationshipCreateForm(
+        request.POST if request.method == "POST" else None,
+        from_parties=from_choices,
+        to_parties=to_choices,
+        initial={"kind": "employment"},
+    )
+    if request.method == "POST" and not form.is_valid():
+        # Choice failures use the generic response for scoped lookup failures.
+        if "from_party_id" in form.errors or "to_party_id" in form.errors:
+            return HttpResponse("Invalid related party", status=400)
+    return _relationship_form_response(
+        request,
+        None,
+        form,
+        "Add relationship",
+        lambda data: services.create_relationship(request.user, **data),
+        "Save relationship",
+        {"from_selector_page": from_choices, "to_selector_page": to_choices},
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@relationships_enabled
+def relationship_detail(request, relationship_id):
+    relationship = services.get_relationship(request.user, relationship_id)
+    return render(
+        request,
+        "relationship_detail.html",
+        {
+            "relationship": relationship,
+            "party_directory_enabled": settings.PARTY_DIRECTORY_ENABLED,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@relationships_enabled
+def relationship_edit(request, relationship_id):
+    relationship = services.get_relationship(request.user, relationship_id)
+    if request.method == "POST" and not _relationship_post_valid(
+        request, {"kind", "role", "starts_on", "ends_on", "expected_version"}
+    ):
+        return HttpResponse("Invalid request", status=400)
+    form = RelationshipForm(
+        request.POST if request.method == "POST" else None,
+        initial={
+            "kind": relationship.kind,
+            "role": relationship.role or "",
+            "starts_on": relationship.starts_on,
+            "ends_on": relationship.ends_on,
+            "expected_version": relationship.version,
+        },
+    )
+    return _relationship_form_response(
+        request,
+        relationship,
+        form,
+        "Correct relationship",
+        lambda data: services.update_relationship(
+            request.user, relationship_id, **data
+        ),
+        "Save relationship",
+    )
+
+
+@require_http_methods(["POST"])
+@authorized
+@relationships_enabled
+def relationship_close(request, relationship_id):
+    relationship = services.get_relationship(request.user, relationship_id)
+    if not _relationship_post_valid(request, {"ends_on", "expected_version"}):
+        return HttpResponse("Invalid request", status=400)
+    form = RelationshipCloseForm(request.POST)
+    return _relationship_form_response(
+        request,
+        relationship,
+        form,
+        "Close relationship",
+        lambda data: services.close_relationship(request.user, relationship_id, **data),
+        "Close relationship",
     )
