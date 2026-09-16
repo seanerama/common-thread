@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Interaction history</h1>
+<p><a href="/interactions/{{ interaction.id }}/">Current interaction</a></p>
+{% for revision in revisions %}<article>
+<h2>Version {{ revision.version }}</h2>
+<p>Occurred at {{ revision.occurred_at }} · Original author {{ revision.authored_by.username }} · Corrected by {{ revision.edited_by.username }} at {{ revision.edited_at }}</p>
+<div style="white-space: pre-wrap">{{ revision.body }}</div>
+<h3>Participants</h3>
+<ul>{% for link in revision.participant_links.all %}<li>{{ link.party.display_name }}{% if link.party.archived_at %} (archived){% endif %}</li>{% endfor %}</ul>
+</article>{% empty %}<p>No prior versions.</p>{% endfor %}
+{% endblock %}

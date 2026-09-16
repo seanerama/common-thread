@@ -179,3 +179,46 @@ def test_relationships_browser_and_independent_flags(
         party_directory="off",
         relationships="off",
     )
+
+
+@pytest.mark.browser
+@pytest.mark.django_db(transaction=True)
+def test_interactions_browser_and_independent_flags(
+    live_server, owners, tmp_path, settings
+):
+    settings.PARTY_DIRECTORY_ENABLED = False
+    settings.RELATIONSHIPS_ENABLED = False
+    settings.INTERACTIONS_ENABLED = True
+    record = tmp_path / "fictional-interactions.json"
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        record_file=record,
+        interactions="on",
+    )
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        interactions="on",
+    )
+    settings.INTERACTIONS_ENABLED = False
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        interactions="off",
+    )
+    settings.PARTY_DIRECTORY_ENABLED = True
+    settings.INTERACTIONS_ENABLED = True
+    smoke(
+        live_server.url,
+        "fictional_owner",
+        "Fictional-passphrase-725!",
+        read_file=record,
+        party_directory="on",
+        interactions="on",
+    )

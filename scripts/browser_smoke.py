@@ -401,6 +401,117 @@ def relationships_off(page, base_url, record):
     page.goto(base_url + record["path"])
 
 
+def _create_smoke_person(page, base_url, name):
+    page.goto(f"{base_url}/people/new/")
+    page.get_by_label("Name", exact=True).fill(name)
+    page.get_by_role("button", name="Save person", exact=True).click()
+    expect(page).to_have_url(re.compile(re.escape(base_url) + r"/people/[0-9a-f-]+/"))
+    return {"path": page.url.removeprefix(base_url), "display_name": name}
+
+
+def interactions_read(page, base_url, record):
+    interaction = record["interaction"]
+    response = page.goto(base_url + interaction["path"])
+    assert response.status == 200
+    expect(page.get_by_text(interaction["body"], exact=True)).to_be_visible()
+    expect(page.get_by_text(record["display_name"], exact=True)).to_be_visible()
+    expect(
+        page.get_by_text(record["third_person"]["display_name"], exact=True)
+    ).to_be_visible()
+    page.get_by_role("link", name="Interaction history", exact=True).click()
+    expect(page.get_by_text(interaction["prior_body"], exact=True)).to_be_visible()
+    expect(
+        page.get_by_text(record["second_person"]["display_name"], exact=True)
+    ).to_be_visible()
+
+    # Current membership follows the replacement, while the removed participant is
+    # still available through the shared record's correction history.
+    page.goto(base_url + record["path"])
+    expect(page.get_by_text(interaction["body"], exact=True)).to_be_visible()
+    page.goto(base_url + record["third_person"]["path"])
+    expect(page.get_by_text(interaction["body"], exact=True)).to_be_visible()
+    page.goto(base_url + record["second_person"]["path"])
+    expect(page.get_by_text(interaction["body"], exact=True)).to_have_count(0)
+
+
+def interactions_on(page, base_url, record, read_only):
+    if read_only:
+        interactions_read(page, base_url, record)
+        return
+
+    record["second_person"] = _create_smoke_person(
+        page, base_url, f"Fictional Interaction Guest {uuid4().hex[:10]}"
+    )
+    record["third_person"] = _create_smoke_person(
+        page, base_url, f"Fictional Replacement Guest {uuid4().hex[:10]}"
+    )
+    prior_body = f"Fictional shared conversation {uuid4().hex}"
+    page.goto(f"{base_url}/interactions/new/")
+    page.locator('[name="occurred_at"]').fill("2026-03-04T10:30+00:00")
+    page.locator('[name="body"]').fill(prior_body)
+    for participant in (record, record["second_person"]):
+        page.locator(
+            f'[name="participant_ids"][value="{_party_id(participant["path"])}"]'
+        ).check()
+    page.get_by_role("button", name="Save interaction", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/interactions/[0-9a-f-]+/")
+    )
+    interaction_path = page.url.removeprefix(base_url)
+    corrected_body = f"Fictional corrected conversation {uuid4().hex}"
+    page.get_by_role("link", name="Edit interaction", exact=True).click()
+    stale = page.context.new_page()
+    try:
+        stale.goto(page.url)
+        page.locator('[name="body"]').fill(corrected_body)
+        page.locator(
+            f'[name="participant_ids"][value="{_party_id(record["second_person"]["path"])}"]'
+        ).uncheck()
+        page.locator(
+            f'[name="participant_ids"][value="{_party_id(record["third_person"]["path"])}"]'
+        ).check()
+        page.get_by_role("button", name="Save interaction", exact=True).click()
+        stale.locator('[name="body"]').fill("Fictional stale correction")
+        with stale.expect_navigation() as conflict:
+            stale.get_by_role("button", name="Save interaction", exact=True).click()
+        assert conflict.value.status == 409
+        expect(stale.get_by_role("alert")).to_contain_text(re.compile("reload", re.I))
+        expect(stale.locator('[name="body"]')).to_have_value(
+            "Fictional stale correction"
+        )
+    finally:
+        stale.close()
+    record["interaction"] = {
+        "path": interaction_path,
+        "body": corrected_body,
+        "prior_body": prior_body,
+    }
+    interactions_read(page, base_url, record)
+
+
+def interactions_off(page, base_url, record):
+    expect(page.get_by_role("heading", name="Interactions", exact=True)).to_have_count(
+        0
+    )
+    expect(page.get_by_role("link", name="Add interaction", exact=True)).to_have_count(
+        0
+    )
+    paths = ["/interactions/new/"]
+    if "interaction" in record:
+        interaction_path = record["interaction"]["path"]
+        paths.extend(
+            (
+                interaction_path,
+                interaction_path + "edit/",
+                interaction_path + "history/",
+            )
+        )
+    for path in paths:
+        response = page.goto(base_url + path)
+        assert response.status == 404
+    page.goto(base_url + record["path"])
+
+
 def smoke(
     base_url,
     username,
@@ -411,6 +522,7 @@ def smoke(
     context_notes="off",
     party_directory="off",
     relationships="off",
+    interactions="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -480,12 +592,17 @@ def smoke(
                 )
             else:
                 relationships_off(page, base_url, record)
+            if interactions == "on":
+                interactions_on(page, base_url, record, bool(read_file))
+            else:
+                interactions_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
             print(
                 f"Browser smoke passed: people management {people_management}; "
                 f"context notes {context_notes}; party directory {party_directory}; "
                 f"relationships {relationships}"
+                f"; interactions {interactions}"
             )
         finally:
             browser.close()
@@ -503,6 +620,7 @@ def main():
     parser.add_argument("--context-notes", choices=("on", "off"), default="off")
     parser.add_argument("--party-directory", choices=("on", "off"), default="off")
     parser.add_argument("--relationships", choices=("on", "off"), default="off")
+    parser.add_argument("--interactions", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -517,6 +635,7 @@ def main():
         args.context_notes,
         args.party_directory,
         args.relationships,
+        args.interactions,
     )
 
 

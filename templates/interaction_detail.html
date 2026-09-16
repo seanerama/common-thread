@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Interaction</h1>
+<p>Occurred at {{ interaction.occurred_at }} · Original author {{ interaction.authored_by.username }} · Version {{ interaction.version }}</p>
+<div style="white-space: pre-wrap">{{ interaction.body }}</div>
+<h2>Current participants</h2>
+<ul>{% for party in participants %}<li>{% if party.kind == "person" %}<a href="/people/{{ party.id }}/">{{ party.display_name }}</a>{% elif party_directory_enabled %}<a href="/{% if party.kind == 'organization' %}organizations{% else %}households{% endif %}/{{ party.id }}/">{{ party.display_name }}</a>{% else %}{{ party.display_name }}{% endif %}{% if party.archived_at %} (archived){% endif %}</li>{% endfor %}</ul>
+<p><a href="/interactions/{{ interaction.id }}/edit/">Edit interaction</a> <a href="/interactions/{{ interaction.id }}/history/">Interaction history</a></p>
+{% endblock %}

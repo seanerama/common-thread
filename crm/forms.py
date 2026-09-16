@@ -83,3 +83,28 @@ class RelationshipForm(VersionForm):
 
 class RelationshipCloseForm(VersionForm):
     ends_on = forms.DateField(widget=forms.DateInput(attrs={"type": "date"}))
+
+
+class InteractionCreateForm(forms.Form):
+    occurred_at = forms.CharField(
+        label="Occurred at",
+        help_text=(
+            "Enter an ISO date and time with an explicit UTC offset, for example "
+            "2026-09-16T14:30:00-05:00."
+        ),
+    )
+    body = forms.CharField(max_length=20000, strip=False, widget=forms.Textarea)
+    participant_ids = forms.MultipleChoiceField(
+        label="Participants", widget=forms.CheckboxSelectMultiple
+    )
+
+    def __init__(self, *args, parties=(), selected_parties=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        choices = {}
+        for party in [*selected_parties, *parties]:
+            choices[str(party.id)] = f"{party.display_name} ({party.kind})"
+        self.fields["participant_ids"].choices = choices.items()
+
+
+class InteractionForm(VersionForm, InteractionCreateForm):
+    pass

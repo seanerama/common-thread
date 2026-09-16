@@ -124,3 +124,5 @@ PARTY_DIRECTORY_ENABLED = (
 RELATIONSHIPS_ENABLED = (
     os.environ.get("RELATIONSHIPS_ENABLED", "false").lower() == "true"
 )
+
+INTERACTIONS_ENABLED = os.environ.get("INTERACTIONS_ENABLED", "false").lower() == "true"

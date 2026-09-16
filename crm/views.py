@@ -17,6 +17,8 @@ from django.views.decorators.http import require_http_methods
 from . import services
 from .forms import (
     ContactPointForm,
+    InteractionCreateForm,
+    InteractionForm,
     PartyCreateForm,
     PartyForm,
     PersonForm,
@@ -244,13 +246,18 @@ def person_detail(request, person_id):
     if settings.CONTEXT_NOTES_ENABLED:
         context["notes"] = services.list_context_notes(request.user, person_id)
     context["relationships_enabled"] = settings.RELATIONSHIPS_ENABLED
+    context["interactions_enabled"] = settings.INTERACTIONS_ENABLED
+    allowed_query = set()
+    if settings.RELATIONSHIPS_ENABLED:
+        allowed_query.update({"relationships_page", "relationships_ended_page"})
+    if settings.INTERACTIONS_ENABLED:
+        allowed_query.add("interactions_page")
+    if set(request.GET) - allowed_query or any(
+        len(request.GET.getlist(key)) != 1 for key in request.GET
+    ):
+        return HttpResponse("Invalid detail page query", status=400)
     if settings.RELATIONSHIPS_ENABLED:
         try:
-            if set(request.GET) - {
-                "relationships_page",
-                "relationships_ended_page",
-            } or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
-                raise ValidationError("Invalid relationship page")
             context["relationships"], context["ended_relationships"] = (
                 services.relationship_panels(
                     request.user,
@@ -261,6 +268,15 @@ def person_detail(request, person_id):
             )
         except ValidationError:
             return HttpResponse("Invalid relationship page", status=400)
+    if settings.INTERACTIONS_ENABLED:
+        try:
+            context["interactions"] = services.interaction_panels(
+                request.user,
+                person_id,
+                request.GET.get("interactions_page", "1"),
+            )
+        except ValidationError:
+            return HttpResponse("Invalid interaction page", status=400)
     return render(request, "person_detail.html", context)
 
 
@@ -600,14 +616,19 @@ def party_detail(request, kind, party_id):
         "singular": singular,
         "singular_lower": singular.lower(),
         "relationships_enabled": settings.RELATIONSHIPS_ENABLED,
+        "interactions_enabled": settings.INTERACTIONS_ENABLED,
     }
+    allowed_query = set()
+    if settings.RELATIONSHIPS_ENABLED:
+        allowed_query.update({"relationships_page", "relationships_ended_page"})
+    if settings.INTERACTIONS_ENABLED:
+        allowed_query.add("interactions_page")
+    if set(request.GET) - allowed_query or any(
+        len(request.GET.getlist(key)) != 1 for key in request.GET
+    ):
+        return HttpResponse("Invalid detail page query", status=400)
     if settings.RELATIONSHIPS_ENABLED:
         try:
-            if set(request.GET) - {
-                "relationships_page",
-                "relationships_ended_page",
-            } or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
-                raise ValidationError("Invalid relationship page")
             context["relationships"], context["ended_relationships"] = (
                 services.relationship_panels(
                     request.user,
@@ -618,6 +639,15 @@ def party_detail(request, kind, party_id):
             )
         except ValidationError:
             return HttpResponse("Invalid relationship page", status=400)
+    if settings.INTERACTIONS_ENABLED:
+        try:
+            context["interactions"] = services.interaction_panels(
+                request.user,
+                party_id,
+                request.GET.get("interactions_page", "1"),
+            )
+        except ValidationError:
+            return HttpResponse("Invalid interaction page", status=400)
     return render(
         request,
         "party_detail.html",
@@ -924,4 +954,212 @@ def relationship_close(request, relationship_id):
         "Close relationship",
         lambda data: services.close_relationship(request.user, relationship_id, **data),
         "Close relationship",
+    )
+
+
+def interactions_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.INTERACTIONS_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+def _interaction_post_valid(request, editing=False):
+    allowed = {"occurred_at", "body", "participant_ids", "csrfmiddlewaretoken"}
+    if editing:
+        allowed.add("expected_version")
+    if set(request.POST) - allowed:
+        return False
+    return all(
+        key == "participant_ids" or len(request.POST.getlist(key)) == 1
+        for key in request.POST
+    )
+
+
+def _interaction_selector(request, current_parties=()):
+    if set(request.GET) - {"q", "page", "selected"}:
+        raise ValidationError("Invalid selector query")
+    if any(
+        len(request.GET.getlist(key)) != 1 for key in request.GET if key != "selected"
+    ):
+        raise ValidationError("Invalid selector query")
+    current_ids = {party.id for party in current_parties}
+    raw_selected = (
+        request.GET.getlist("selected")
+        if "selected" in request.GET
+        else [str(party.id) for party in current_parties]
+    )
+    selected = services.interaction_selected_parties(
+        request.user, raw_selected, current_ids
+    )
+    page = services.interaction_selector(
+        request.user, request.GET.get("q", ""), request.GET.get("page", "1")
+    )
+    return page, selected
+
+
+def _interaction_form_response(
+    request, interaction, form, selector_page, selected_parties, save
+):
+    status = 200
+    conflict = False
+    if request.method == "POST" and form.is_valid():
+        try:
+            saved = save(form.cleaned_data)
+        except services.Conflict:
+            status, conflict = 409, True
+            form.add_error(
+                None,
+                "This interaction changed. Reload and review the latest version before "
+                "saving again. Your submitted values are shown below.",
+            )
+        except ValidationError as exc:
+            if "party" in exc.message_dict or (
+                "participant_ids" in exc.message_dict
+                and any(
+                    "valid" in str(message).lower() or "active" in str(message).lower()
+                    for message in exc.message_dict["participant_ids"]
+                )
+            ):
+                return HttpResponse("Invalid related party", status=400)
+            for field, messages in exc.message_dict.items():
+                form.add_error(field if field in form.fields else None, messages)
+        else:
+            return redirect303(f"/interactions/{saved.id}/")
+    return render(
+        request,
+        "interaction_form.html",
+        {
+            "interaction": interaction,
+            "form": form,
+            "title": "Correct interaction" if interaction else "Add interaction",
+            "submit_label": "Save interaction",
+            "selector_page": selector_page,
+            "selected_parties": selected_parties,
+            "selector_choices": [
+                party
+                for party in selector_page
+                if party.id not in {selected.id for selected in selected_parties}
+            ],
+            "conflict": conflict,
+            "cancel_path": (
+                f"/interactions/{interaction.id}/" if interaction else "/people/"
+            ),
+        },
+        status=status,
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@interactions_enabled
+def interaction_new(request):
+    if request.method == "POST" and not _interaction_post_valid(request):
+        return HttpResponse("Invalid request", status=400)
+    try:
+        selector_page, selected = _interaction_selector(request)
+    except ValidationError:
+        return HttpResponse("Invalid selector query", status=400)
+    form = InteractionCreateForm(
+        request.POST if request.method == "POST" else None,
+        parties=selector_page,
+        selected_parties=selected,
+        initial={"participant_ids": [str(party.id) for party in selected]},
+    )
+    if (
+        request.method == "POST"
+        and not form.is_valid()
+        and "participant_ids" in form.errors
+    ):
+        submitted = request.POST.getlist("participant_ids")
+        valid_choices = {
+            str(value) for value, _ in form.fields["participant_ids"].choices
+        }
+        if any(value not in valid_choices for value in submitted):
+            return HttpResponse("Invalid related party", status=400)
+    return _interaction_form_response(
+        request,
+        None,
+        form,
+        selector_page,
+        selected,
+        lambda data: services.create_interaction(request.user, **data),
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@interactions_enabled
+def interaction_detail(request, interaction_id):
+    interaction = services.get_interaction(request.user, interaction_id)
+    return render(
+        request,
+        "interaction_detail.html",
+        {
+            "interaction": interaction,
+            "participants": services.interaction_parties(interaction),
+            "party_directory_enabled": settings.PARTY_DIRECTORY_ENABLED,
+        },
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@interactions_enabled
+def interaction_edit(request, interaction_id):
+    interaction = services.get_interaction(request.user, interaction_id)
+    current = services.interaction_parties(interaction)
+    if request.method == "POST" and not _interaction_post_valid(request, editing=True):
+        return HttpResponse("Invalid request", status=400)
+    try:
+        selector_page, selected = _interaction_selector(request, current)
+    except ValidationError:
+        return HttpResponse("Invalid selector query", status=400)
+    form = InteractionForm(
+        request.POST if request.method == "POST" else None,
+        parties=selector_page,
+        selected_parties=[*current, *selected],
+        initial={
+            "occurred_at": interaction.occurred_at.isoformat(),
+            "body": interaction.body,
+            "participant_ids": [str(party.id) for party in selected],
+            "expected_version": interaction.version,
+        },
+    )
+    if (
+        request.method == "POST"
+        and not form.is_valid()
+        and "participant_ids" in form.errors
+    ):
+        submitted = request.POST.getlist("participant_ids")
+        valid_choices = {
+            str(value) for value, _ in form.fields["participant_ids"].choices
+        }
+        if any(value not in valid_choices for value in submitted):
+            return HttpResponse("Invalid related party", status=400)
+    return _interaction_form_response(
+        request,
+        interaction,
+        form,
+        selector_page,
+        selected,
+        lambda data: services.update_interaction(request.user, interaction_id, **data),
+    )
+
+
+@require_http_methods(["GET"])
+@authorized
+@interactions_enabled
+def interaction_history(request, interaction_id):
+    interaction = services.get_interaction(request.user, interaction_id)
+    return render(
+        request,
+        "interaction_history.html",
+        {
+            "interaction": interaction,
+            "revisions": services.interaction_history(request.user, interaction_id),
+        },
     )
