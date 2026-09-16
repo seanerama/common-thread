@@ -512,6 +512,71 @@ def interactions_off(page, base_url, record):
     page.goto(base_url + record["path"])
 
 
+def commitments_read(page, base_url, record):
+    commitment = record["commitment"]
+    response = page.goto(base_url + commitment["path"])
+    assert response.status == 200
+    expect(page.get_by_text(commitment["description"], exact=True)).to_be_visible()
+    expect(
+        page.get_by_role("link", name=record["display_name"], exact=True)
+    ).to_be_visible()
+    expect(
+        page.get_by_role(
+            "link", name=record["third_person"]["display_name"], exact=True
+        )
+    ).to_be_visible()
+    page.goto(base_url + record["path"])
+    expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
+    page.goto(base_url + record["third_person"]["path"])
+    expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
+    page.goto(f"{base_url}/commitments/")
+    expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
+
+
+def commitments_on(page, base_url, record, read_only, interactions):
+    if read_only:
+        commitments_read(page, base_url, record)
+        return
+    assert "interaction" in record and "third_person" in record
+    page.goto(f"{base_url}/commitments/new/")
+    first_id = _party_id(record["path"])
+    third_id = _party_id(record["third_person"]["path"])
+    page.locator('[name="owed_by_party_id"]').select_option(first_id)
+    page.locator('[name="owed_to_party_id"]').select_option(third_id)
+    page.locator(f'[name="person_ids"][value="{first_id}"]').check()
+    page.locator(f'[name="person_ids"][value="{third_id}"]').check()
+    if interactions == "on":
+        page.locator('[name="source_interaction_id"]').select_option(
+            _party_id(record["interaction"]["path"])
+        )
+    description = f"Fictional promise after shared conversation {uuid4().hex}"
+    page.locator('[name="description"]').fill(description)
+    page.locator('[name="due_on"]').fill("2026-12-31")
+    page.get_by_role("button", name="Save commitment", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/commitments/[0-9a-f-]+/")
+    )
+    path = page.url.removeprefix(base_url)
+    page.get_by_role("button", name="Complete commitment", exact=True).click()
+    expect(page.get_by_text("Status completed", exact=False)).to_be_visible()
+    page.get_by_role("button", name="Reopen commitment", exact=True).click()
+    expect(page.get_by_text("Status open", exact=False)).to_be_visible()
+    record["commitment"] = {"path": path, "description": description}
+    commitments_read(page, base_url, record)
+
+
+def commitments_off(page, base_url, record):
+    expect(page.get_by_role("heading", name="Commitments", exact=True)).to_have_count(0)
+    expect(page.get_by_role("link", name="Commitments", exact=True)).to_have_count(0)
+    paths = ["/commitments/", "/commitments/new/"]
+    if "commitment" in record:
+        paths.append(record["commitment"]["path"])
+    for path in paths:
+        response = page.goto(base_url + path)
+        assert response.status == 404
+    page.goto(base_url + record["path"])
+
+
 def smoke(
     base_url,
     username,
@@ -523,6 +588,7 @@ def smoke(
     party_directory="off",
     relationships="off",
     interactions="off",
+    commitments="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -596,6 +662,10 @@ def smoke(
                 interactions_on(page, base_url, record, bool(read_file))
             else:
                 interactions_off(page, base_url, record)
+            if commitments == "on":
+                commitments_on(page, base_url, record, bool(read_file), interactions)
+            else:
+                commitments_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
             print(
@@ -603,6 +673,7 @@ def smoke(
                 f"context notes {context_notes}; party directory {party_directory}; "
                 f"relationships {relationships}"
                 f"; interactions {interactions}"
+                f"; commitments {commitments}"
             )
         finally:
             browser.close()
@@ -621,6 +692,7 @@ def main():
     parser.add_argument("--party-directory", choices=("on", "off"), default="off")
     parser.add_argument("--relationships", choices=("on", "off"), default="off")
     parser.add_argument("--interactions", choices=("on", "off"), default="off")
+    parser.add_argument("--commitments", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -636,6 +708,7 @@ def main():
         args.party_directory,
         args.relationships,
         args.interactions,
+        args.commitments,
     )
 
 

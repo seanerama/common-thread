@@ -108,3 +108,69 @@ class InteractionCreateForm(forms.Form):
 
 class InteractionForm(VersionForm, InteractionCreateForm):
     pass
+
+
+class CommitmentCreateForm(forms.Form):
+    description = forms.CharField(max_length=2000, strip=False, widget=forms.Textarea)
+    owed_by_party_id = forms.ChoiceField(label="Owed by")
+    owed_to_party_id = forms.ChoiceField(label="Owed to")
+    due_on = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={"type": "date"}),
+        help_text="Due-date filters use the UTC calendar date.",
+    )
+    person_ids = forms.MultipleChoiceField(
+        label="Linked people", widget=forms.CheckboxSelectMultiple
+    )
+    source_interaction_id = forms.ChoiceField(
+        label="Source interaction", required=False
+    )
+
+    def __init__(
+        self,
+        *args,
+        owed_by_parties=(),
+        owed_to_parties=(),
+        people=(),
+        selected_people=(),
+        interactions=(),
+        selected_source=None,
+        source_enabled=True,
+        can_clear_hidden_source=False,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+
+        def party_choices(rows):
+            return [
+                (str(party.id), f"{party.display_name} ({party.kind})")
+                for party in rows
+            ]
+
+        self.fields["owed_by_party_id"].choices = party_choices(owed_by_parties)
+        self.fields["owed_to_party_id"].choices = party_choices(owed_to_parties)
+        choices = {}
+        for party in [*selected_people, *people]:
+            choices[str(party.id)] = party.display_name
+        self.fields["person_ids"].choices = choices.items()
+        if source_enabled:
+            source_choices = {"": "No source interaction"}
+            if selected_source is not None:
+                source_choices[str(selected_source.id)] = (
+                    f"{selected_source.occurred_at}: {selected_source.body[:80]}"
+                )
+            for interaction in interactions:
+                source_choices[str(interaction.id)] = (
+                    f"{interaction.occurred_at}: {interaction.body[:80]}"
+                )
+            self.fields["source_interaction_id"].choices = source_choices.items()
+        else:
+            self.fields.pop("source_interaction_id")
+            if can_clear_hidden_source:
+                self.fields["clear_source_interaction"] = forms.BooleanField(
+                    label="Clear the existing hidden source interaction", required=False
+                )
+
+
+class CommitmentForm(VersionForm, CommitmentCreateForm):
+    pass

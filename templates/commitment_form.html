@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<form method="get">
+<fieldset><legend>Select the owing party</legend>
+{% if selected_owed_by %}<label><input type="radio" name="owed_by_selected" value="{{ selected_owed_by.id }}" checked> {{ selected_owed_by.display_name }} ({{ selected_owed_by.kind }}){% if selected_owed_by.archived_at %} — archived{% endif %}</label>{% endif %}
+{% for party in owed_by_page %}{% if party.id != selected_owed_by.id %}<label><input type="radio" name="owed_by_selected" value="{{ party.id }}"> {{ party.display_name }} ({{ party.kind }})</label>{% endif %}{% endfor %}
+<label for="owed-by-search">Find active owing parties</label><input id="owed-by-search" name="owed_by_q" value="{{ request.GET.owed_by_q }}" maxlength="200">
+{% if owed_by_page.has_previous %}<button name="owed_by_page" value="{{ owed_by_page.previous_page_number }}">Previous owing parties</button>{% endif %}{% if owed_by_page.has_next %}<button name="owed_by_page" value="{{ owed_by_page.next_page_number }}">Next owing parties</button>{% endif %}
+</fieldset>
+<fieldset><legend>Select the receiving party</legend>
+{% if selected_owed_to %}<label><input type="radio" name="owed_to_selected" value="{{ selected_owed_to.id }}" checked> {{ selected_owed_to.display_name }} ({{ selected_owed_to.kind }}){% if selected_owed_to.archived_at %} — archived{% endif %}</label>{% endif %}
+{% for party in owed_to_page %}{% if party.id != selected_owed_to.id %}<label><input type="radio" name="owed_to_selected" value="{{ party.id }}"> {{ party.display_name }} ({{ party.kind }})</label>{% endif %}{% endfor %}
+<label for="owed-to-search">Find active receiving parties</label><input id="owed-to-search" name="owed_to_q" value="{{ request.GET.owed_to_q }}" maxlength="200">
+{% if owed_to_page.has_previous %}<button name="owed_to_page" value="{{ owed_to_page.previous_page_number }}">Previous receiving parties</button>{% endif %}{% if owed_to_page.has_next %}<button name="owed_to_page" value="{{ owed_to_page.next_page_number }}">Next receiving parties</button>{% endif %}
+</fieldset>
+<fieldset><legend>Build the linked-people selection</legend>
+{% for person in selected_people %}<label><input type="checkbox" name="person_selected" value="{{ person.id }}" checked> {{ person.display_name }}{% if person.archived_at %} — archived{% endif %}</label>{% endfor %}
+{% for person in people_page %}{% if person not in selected_people %}<label><input type="checkbox" name="person_selected" value="{{ person.id }}"> {{ person.display_name }}</label>{% endif %}{% endfor %}
+<label for="people-search">Find active people</label><input id="people-search" name="people_q" value="{{ request.GET.people_q }}" maxlength="200">
+{% if people_page.has_previous %}<button name="people_page" value="{{ people_page.previous_page_number }}">Previous people</button>{% endif %}{% if people_page.has_next %}<button name="people_page" value="{{ people_page.next_page_number }}">Next people</button>{% endif %}
+</fieldset>
+{% if interactions_enabled %}<fieldset><legend>Select an optional source interaction</legend>
+{% if selected_source %}<label><input type="radio" name="source_selected" value="{{ selected_source.id }}" checked> {{ selected_source.occurred_at }}: {{ selected_source.body|truncatechars:80 }}</label>{% endif %}
+{% for interaction in source_page %}{% if interaction.id != selected_source.id %}<label><input type="radio" name="source_selected" value="{{ interaction.id }}"> {{ interaction.occurred_at }}: {{ interaction.body|truncatechars:80 }}</label>{% endif %}{% endfor %}
+<label for="source-search">Find source interactions</label><input id="source-search" name="source_q" value="{{ request.GET.source_q }}" maxlength="200">
+{% if source_page.has_previous %}<button name="source_page" value="{{ source_page.previous_page_number }}">Previous interactions</button>{% endif %}{% if source_page.has_next %}<button name="source_page" value="{{ source_page.next_page_number }}">Next interactions</button>{% endif %}
+</fieldset>{% endif %}
+<button type="submit">Update selections</button>
+</form>
+<p>Each selector shows up to 50 scoped records. Keep checked selections while searching or paging.</p>
+{% if form.errors %}<div class="error" role="alert">{{ form.non_field_errors }}{% for field in form %}{{ field.errors }}{% endfor %}</div>{% endif %}
+{% if conflict %}<p><a href="{{ cancel_path }}">Reload and review the current commitment</a></p>{% endif %}
+<form method="post">{% csrf_token %}
+{% for field in form %}{% if field.is_hidden %}{{ field }}{% else %}<p>{{ field.label_tag }}{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}</p>{% endif %}{% endfor %}
+<p><button type="submit">Save commitment</button> <a href="{{ cancel_path }}">Cancel</a></p>
+</form>
+{% endblock %}

@@ -206,6 +206,70 @@ class InteractionRevisionParticipant(Record):
         ]
 
 
+class Commitment(Record):
+    description = models.TextField()
+    owed_by = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="commitments_owed"
+    )
+    owed_to = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="commitments_received"
+    )
+    due_on = models.DateField(null=True, default=None)
+    status = models.CharField(
+        max_length=10,
+        choices=[("open", "open"), ("completed", "completed")],
+        default="open",
+    )
+    completed_at = models.DateTimeField(null=True, default=None)
+    created_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="commitments"
+    )
+    source_interaction = models.ForeignKey(
+        Interaction,
+        null=True,
+        default=None,
+        on_delete=models.PROTECT,
+        related_name="commitments",
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="commitment_positive_version"
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(status="open", completed_at__isnull=True)
+                    | Q(status="completed", completed_at__isnull=False)
+                ),
+                name="commitment_valid_state",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"], name="commitment_workspace_id"
+            ),
+        ]
+
+
+class CommitmentPerson(Record):
+    commitment = models.ForeignKey(
+        Commitment, on_delete=models.PROTECT, related_name="person_links"
+    )
+    person = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="commitment_links"
+    )
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1),
+                name="commitment_person_positive_version",
+            ),
+            models.UniqueConstraint(
+                fields=["commitment", "person"], name="commitment_person_once"
+            ),
+        ]
+
+
 class LoginAttempt(models.Model):
     key = models.CharField(max_length=64, primary_key=True)
     failures = models.PositiveIntegerField(default=0)

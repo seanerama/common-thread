@@ -238,3 +238,25 @@ proof file. Disable the flag, recreate the app, and read with `--interactions of
 verify all interaction routes are unavailable without deleting data. Reenable and
 reread with the party-directory and relationship flags either on or off to prove the
 feature flags are independent.
+
+## Stage 6 commitment acceptance
+
+`COMMITMENTS_ENABLED` defaults to `false` in the application, Compose, CI, and the
+example environment. Set it to `true`, apply the additive migration from the exact
+tested image, and recreate the application container. Disabling the flag hides the
+work list, person panels, controls, and direct routes while retaining commitments.
+
+With all relationship-workflow flags enabled, the operator smoke creates a promise
+after the shared fictional conversation, links both people explicitly, verifies both
+person panels and the work list, then completes and reopens the promise. The same
+proof file supports replacement and restored-database reads:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --interactions on --commitments on --read-file /tmp/commitment-proof.json
+```
+
+To prove independent flags and hidden source content, disable
+`INTERACTIONS_ENABLED`, keep `COMMITMENTS_ENABLED=true`, recreate the app, and read
+the same proof with `--interactions off --commitments on`. Cycle commitments off and
+on around that read to prove that data survives the runtime kill switch.

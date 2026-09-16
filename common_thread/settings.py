@@ -126,3 +126,5 @@ RELATIONSHIPS_ENABLED = (
 )
 
 INTERACTIONS_ENABLED = os.environ.get("INTERACTIONS_ENABLED", "false").lower() == "true"
+
+COMMITMENTS_ENABLED = os.environ.get("COMMITMENTS_ENABLED", "false").lower() == "true"

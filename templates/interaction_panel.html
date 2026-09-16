@@ -8,6 +8,6 @@
 <p><a href="/interactions/{{ interaction.id }}/">View interaction</a></p>
 </article>
 {% empty %}<p>No current interactions.</p>{% endfor %}
-{% if interactions.has_previous %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.previous_page_number }}">Previous interactions</a>{% endif %}
-{% if interactions.has_next %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.next_page_number }}">Next interactions</a>{% endif %}
+{% if interactions.has_previous %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.previous_page_number }}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Previous interactions</a>{% endif %}
+{% if interactions.has_next %}<a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.next_page_number }}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}">Next interactions</a>{% endif %}
 </section>
