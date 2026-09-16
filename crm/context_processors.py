@@ -7,4 +7,5 @@ def feature_flags(request):
         "relationships_enabled": settings.RELATIONSHIPS_ENABLED,
         "interactions_enabled": settings.INTERACTIONS_ENABLED,
         "commitments_enabled": settings.COMMITMENTS_ENABLED,
+        "person_overview_enabled": settings.PERSON_OVERVIEW_ENABLED,
     }
