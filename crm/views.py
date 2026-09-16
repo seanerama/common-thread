@@ -211,7 +211,7 @@ def api_create(request):
         person = services.create_person(request.user, data["display_name"])
     except RequestDataTooBig:
         return error("payload_too_large", 413)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):
         return error("validation_error", 400)
     except ValidationError as exc:
         return error("validation_error", 400, fields=exc.message_dict)

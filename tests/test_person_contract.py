@@ -82,7 +82,9 @@ def test_invalid_input_is_atomic(authenticated, payload):
     assert (Party.objects.count(), Person.objects.count()) == before
 
 
-@pytest.mark.parametrize("body", ['{"display_name":', b"\xff", "{bad json}"])
+@pytest.mark.parametrize(
+    "body", ['{"display_name":', b"\xff", "{bad json}", "[" * 1200 + "]" * 1200]
+)
 def test_malformed_json(authenticated, body):
     assert_error(post_json(authenticated, body), 400, "validation_error")
 
