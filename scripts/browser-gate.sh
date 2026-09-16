@@ -26,15 +26,15 @@ start_server() {
   done
   uv run python scripts/check_health.py http://localhost:18009
 }
-export PEOPLE_MANAGEMENT_ENABLED=false
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off
-export PEOPLE_MANAGEMENT_ENABLED=true
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --record-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=false
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --record-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --read-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=true
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --read-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --read-file "$proof_dir/person.json"
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --read-file "$proof_dir/person.json"

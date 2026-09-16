@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Note history</h1>
+<p>{{ person.display_name }}</p>
+{% for revision in revisions %}<article>
+<h2>Version {{ revision.version }}</h2>
+<div style="white-space: pre-wrap">{{ revision.body }}</div>
+<p>Source: {{ revision.source }}</p>
+<p>Original author: {{ revision.authored_by.username }}</p>
+<p>Corrected by {{ revision.edited_by.username }} at {{ revision.edited_at }}</p>
+</article>{% empty %}<p>No corrections yet.</p>{% endfor %}
+<p><a href="/people/{{ person.id }}/">Back to person</a></p>
+{% endblock %}

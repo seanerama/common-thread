@@ -85,3 +85,54 @@ class ContactPoint(Record):
                 fields=["workspace", "id"], name="contact_workspace_id"
             ),
         ]
+
+
+class ContextNote(Record):
+    person = models.ForeignKey(
+        Party, on_delete=models.PROTECT, related_name="context_notes"
+    )
+    body = models.TextField()
+    source = models.CharField(max_length=500)
+    authored_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="context_notes"
+    )
+    source_interaction_id = models.UUIDField(null=True, default=None)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="note_positive_version"
+            ),
+            models.CheckConstraint(
+                condition=Q(source_interaction_id__isnull=True),
+                name="note_no_interaction_yet",
+            ),
+            models.UniqueConstraint(
+                fields=["workspace", "id"], name="note_workspace_id"
+            ),
+        ]
+
+
+class ContextNoteRevision(Record):
+    note = models.ForeignKey(
+        ContextNote, on_delete=models.PROTECT, related_name="revisions"
+    )
+    body = models.TextField()
+    source = models.CharField(max_length=500)
+    authored_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="authored_note_revisions"
+    )
+    edited_by = models.ForeignKey(
+        User, on_delete=models.PROTECT, related_name="edited_note_revisions"
+    )
+    edited_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(version__gte=1), name="note_revision_positive_version"
+            ),
+            models.UniqueConstraint(
+                fields=["note", "version"], name="note_revision_once"
+            ),
+        ]

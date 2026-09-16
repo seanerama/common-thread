@@ -91,7 +91,8 @@ SECURE_PROXY_SSL_HEADER = (
 )
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-DATA_UPLOAD_MAX_MEMORY_SIZE = 16384
+# Bounded HTML forms support percent-encoded Unicode; JSON retains 16 KiB.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 262144
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": True,
@@ -109,4 +110,8 @@ LOGGING = {
 # Environment changes take effect after restarting the application processes.
 PEOPLE_MANAGEMENT_ENABLED = (
     os.environ.get("PEOPLE_MANAGEMENT_ENABLED", "false").lower() == "true"
+)
+
+CONTEXT_NOTES_ENABLED = (
+    os.environ.get("CONTEXT_NOTES_ENABLED", "false").lower() == "true"
 )

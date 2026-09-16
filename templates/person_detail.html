@@ -20,5 +20,16 @@
 {% endif %}
 </li>{% empty %}<li>No contact points yet.</li>{% endfor %}</ul>
 {% else %}<p>Person saved.</p>{% endif %}
+{% if notes_enabled %}
+<h2>Context notes</h2>
+{% if not person.archived_at %}<p><a href="/people/{{ person.id }}/notes/new/">Add context note</a></p>{% endif %}
+{% for note in notes %}<article>
+<div style="white-space: pre-wrap">{{ note.body }}</div>
+<p>Source: {{ note.source }}</p>
+<p>Author: {{ note.authored_by.username }} · {{ note.created_at }} · Version {{ note.version }}</p>
+{% if not person.archived_at %}<a href="/people/{{ person.id }}/notes/{{ note.id }}/edit/">Correct note</a>{% endif %}
+<a href="/people/{{ person.id }}/notes/{{ note.id }}/history/">Note history</a>
+</article>{% empty %}<p>No context notes yet.</p>{% endfor %}
+{% endif %}
 <p><a href="/people/">Back to people</a></p>
 {% endblock %}

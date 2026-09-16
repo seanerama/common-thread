@@ -21,6 +21,12 @@ urlpatterns = [
         "people/<str:person_id>/contact-points/<str:point_id>/archive/",
         views.contact_point_archive,
     ),
+    path("people/<str:person_id>/notes/new/", views.context_note_form),
+    path("people/<str:person_id>/notes/<str:note_id>/edit/", views.context_note_form),
+    path(
+        "people/<str:person_id>/notes/<str:note_id>/history/",
+        views.context_note_history,
+    ),
     path("api/v1/people/", views.api_create),
     path("api/v1/people/<str:person_id>/", views.api_detail),
     path("health/live/", views.live),

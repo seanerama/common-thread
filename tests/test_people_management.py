@@ -363,7 +363,7 @@ def test_additive_migration_preserves_stage0_data(owners):
         identity, workspace, created = p.id, p.workspace_id, p.created_at
     finally:
         executor = MigrationExecutor(connection)
-        executor.migrate([("crm", "0002_contactpoint")])
+        executor.migrate(executor.loader.graph.leaf_nodes())
     p = Party.objects.get(pk=identity)
     assert (p.workspace_id, p.created_at, p.display_name, p.version) == (
         workspace,

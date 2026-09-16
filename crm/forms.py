@@ -18,3 +18,12 @@ class ContactPointForm(VersionForm):
     kind = forms.ChoiceField(choices=(("email", "Email"), ("phone", "Phone")))
     value = forms.CharField(max_length=320)
     label = forms.CharField(required=False)
+
+
+class ContextNoteForm(VersionForm):
+    body = forms.CharField(max_length=20000, strip=False, widget=forms.Textarea)
+    source = forms.CharField(
+        max_length=500,
+        strip=False,
+        help_text="Where did this context come from? Label any inference as your own.",
+    )

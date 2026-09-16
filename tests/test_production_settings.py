@@ -101,3 +101,19 @@ def test_people_management_runtime_flag_defaults_off(production_env, flag, expec
     )
     assert result.returncode == 0
     assert result.stdout.strip() == str(expected)
+
+
+@pytest.mark.parametrize(
+    "flag,expected", [(None, False), ("false", False), ("true", True)]
+)
+def test_context_notes_runtime_flag_defaults_off(production_env, flag, expected):
+    production_env.pop("CONTEXT_NOTES_ENABLED", None)
+    production_env["PEOPLE_MANAGEMENT_ENABLED"] = "false"
+    if flag is not None:
+        production_env["CONTEXT_NOTES_ENABLED"] = flag
+    result = run_python(
+        production_env,
+        "from django.conf import settings; print(settings.CONTEXT_NOTES_ENABLED)",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(expected)

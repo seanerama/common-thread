@@ -117,6 +117,71 @@ def management_on(page, base_url, record):
         stale.close()
 
 
+def notes_read(page, base_url, record):
+    expect(page.get_by_text(record["note_body"], exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Source: " + record["note_source"], exact=True)
+    ).to_be_visible()
+    page.get_by_role("link", name="Note history", exact=True).click()
+    expect(page.get_by_text(record["prior_note_body"], exact=True)).to_be_visible()
+    expect(
+        page.get_by_text("Source: " + record["prior_note_source"], exact=True)
+    ).to_be_visible()
+    expect(page.get_by_text("Original author:", exact=False)).to_be_visible()
+    expect(page.get_by_text("Corrected by", exact=False)).to_be_visible()
+    page.goto(base_url + record["path"])
+
+
+def notes_on(page, base_url, record):
+    record["prior_note_body"] = "Fictional context: enjoys painting <watercolors>."
+    record["prior_note_source"] = "Fictional conversation at the example picnic"
+    record["note_body"] = "Correction: enjoys sketching <landscapes>, not painting."
+    record["note_source"] = "Fictional follow-up conversation; author correction"
+    page.get_by_role("link", name="Add context note", exact=True).click()
+    page.get_by_label("Body", exact=True).fill(record["prior_note_body"])
+    page.get_by_label("Source", exact=True).fill(record["prior_note_source"])
+    page.get_by_role("button", name="Save note", exact=True).click()
+    page.get_by_role("link", name="Correct note", exact=True).click()
+    record["note_edit_path"] = page.url.removeprefix(base_url)
+    record["note_history_path"] = (
+        record["note_edit_path"].removesuffix("edit/") + "history/"
+    )
+    stale = page.context.new_page()
+    try:
+        stale.goto(page.url)
+        page.get_by_label("Body", exact=True).fill(record["note_body"])
+        page.get_by_label("Source", exact=True).fill(record["note_source"])
+        page.get_by_role("button", name="Save note", exact=True).click()
+        stale.get_by_label("Body", exact=True).fill("Fictional stale context")
+        with stale.expect_navigation() as conflict:
+            stale.get_by_role("button", name="Save note", exact=True).click()
+        assert conflict.value.status == 409
+        expect(stale.get_by_label("Body", exact=True)).to_have_value(
+            "Fictional stale context"
+        )
+        expect(stale.get_by_role("alert")).to_contain_text(re.compile("reload", re.I))
+    finally:
+        stale.close()
+    notes_read(page, base_url, record)
+
+
+def notes_off(page, base_url, record):
+    expect(page.get_by_role("heading", name="Context notes", exact=True)).to_have_count(
+        0
+    )
+    expect(page.get_by_role("link", name="Add context note", exact=True)).to_have_count(
+        0
+    )
+    if "note_body" in record:
+        expect(page.get_by_text(record["note_body"], exact=True)).to_have_count(0)
+    for path in [record["path"] + "notes/new/"] + [
+        record[key] for key in ("note_edit_path", "note_history_path") if key in record
+    ]:
+        response = page.goto(base_url + path)
+        assert response.status == 404
+    page.goto(base_url + record["path"])
+
+
 def smoke(
     base_url,
     username,
@@ -124,6 +189,7 @@ def smoke(
     record_file=None,
     read_file=None,
     people_management="off",
+    context_notes="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -172,9 +238,23 @@ def smoke(
                     management_on(page, base_url, record)
             else:
                 management_off(page, base_url, record)
+            if context_notes == "on":
+                if read_file:
+                    expect(
+                        page.get_by_role("heading", name="Context notes", exact=True)
+                    ).to_be_visible()
+                    if "note_body" in record:
+                        notes_read(page, base_url, record)
+                else:
+                    notes_on(page, base_url, record)
+            else:
+                notes_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
-            print(f"Browser smoke passed: people management {people_management}")
+            print(
+                f"Browser smoke passed: people management {people_management}; "
+                f"context notes {context_notes}"
+            )
         finally:
             browser.close()
 
@@ -188,6 +268,7 @@ def main():
         default="off",
         help="Assert flag state; on exercises Stage 1 workflows",
     )
+    parser.add_argument("--context-notes", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -199,6 +280,7 @@ def main():
         args.record_file,
         args.read_file,
         args.people_management,
+        args.context_notes,
     )
 
 
