@@ -162,3 +162,18 @@ def test_commitments_runtime_flag_defaults_off(production_env, flag, expected):
     )
     assert result.returncode == 0
     assert result.stdout.strip() == str(expected)
+
+
+@pytest.mark.parametrize(
+    "flag,expected", [(None, False), ("false", False), ("true", True)]
+)
+def test_person_overview_runtime_flag_defaults_off(production_env, flag, expected):
+    production_env.pop("PERSON_OVERVIEW_ENABLED", None)
+    if flag is not None:
+        production_env["PERSON_OVERVIEW_ENABLED"] = flag
+    result = run_python(
+        production_env,
+        "from django.conf import settings; print(settings.PERSON_OVERVIEW_ENABLED)",
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == str(expected)

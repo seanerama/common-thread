@@ -1,5 +1,5 @@
 <section aria-labelledby="relationships-heading">
-<h2 id="relationships-heading">Relationships</h2>
+<h2 id="relationships-heading"{% if person_overview %} tabindex="-1"{% endif %}>Relationships</h2>
 <p><a href="/relationships/new/">Add relationship</a></p>
 <h3>Current and future</h3>
 <ul>{% for relationship in relationships %}<li>

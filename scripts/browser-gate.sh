@@ -26,13 +26,19 @@ start_server() {
   done
   uv run python scripts/check_health.py http://localhost:18009
 }
-export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false INTERACTIONS_ENABLED=false COMMITMENTS_ENABLED=false
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false INTERACTIONS_ENABLED=false COMMITMENTS_ENABLED=false PERSON_OVERVIEW_ENABLED=false
 start_server
 uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --relationships off --interactions off --commitments off
-export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true INTERACTIONS_ENABLED=true COMMITMENTS_ENABLED=true
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true INTERACTIONS_ENABLED=true COMMITMENTS_ENABLED=true PERSON_OVERVIEW_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --record-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false INTERACTIONS_ENABLED=false COMMITMENTS_ENABLED=false
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --person-overview on --record-file "$proof_dir/person.json"
+export PERSON_OVERVIEW_ENABLED=false
+start_server
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --person-overview off --read-file "$proof_dir/person.json"
+export PERSON_OVERVIEW_ENABLED=true
+start_server
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --person-overview on --read-file "$proof_dir/person.json"
+export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=false RELATIONSHIPS_ENABLED=false INTERACTIONS_ENABLED=false COMMITMENTS_ENABLED=false PERSON_OVERVIEW_ENABLED=false
 start_server
 uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory off --relationships off --interactions off --commitments off --read-file "$proof_dir/person.json"
 export INTERACTIONS_ENABLED=true
@@ -49,6 +55,6 @@ uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --peopl
 export PEOPLE_MANAGEMENT_ENABLED=false CONTEXT_NOTES_ENABLED=false PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=false
 start_server
 uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management off --context-notes off --party-directory on --relationships off --interactions off --commitments off --read-file "$proof_dir/person.json"
-export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true INTERACTIONS_ENABLED=true COMMITMENTS_ENABLED=true
+export PEOPLE_MANAGEMENT_ENABLED=true CONTEXT_NOTES_ENABLED=true PARTY_DIRECTORY_ENABLED=true RELATIONSHIPS_ENABLED=true INTERACTIONS_ENABLED=true COMMITMENTS_ENABLED=true PERSON_OVERVIEW_ENABLED=true
 start_server
-uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --read-file "$proof_dir/person.json"
+uv run python scripts/browser_smoke.py --base-url http://localhost:18009 --people-management on --context-notes on --party-directory on --relationships on --interactions on --commitments on --person-overview on --read-file "$proof_dir/person.json"

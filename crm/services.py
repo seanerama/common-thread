@@ -1192,6 +1192,75 @@ def commitment_panels(user, person_id, status="open", page="1"):
     return _positive_page(page, Paginator(rows, 50))
 
 
+def person_overview(
+    user,
+    person,
+    *,
+    include_relationships=False,
+    include_interactions=False,
+    include_commitments=False,
+):
+    """Return bounded, read-only previews for the enabled person workflows."""
+    from django.db.models import F, Q
+    from django.utils import timezone
+
+    workspace = workspace_for(user)
+    if person.workspace_id != workspace.id:
+        raise Http404
+
+    overview = {}
+    if include_relationships:
+        from .models import Relationship
+
+        today = timezone.now().date()
+        relationships = (
+            Relationship.objects.filter(workspace=workspace)
+            .filter(Q(from_party=person) | Q(to_party=person))
+            .filter(Q(starts_on__isnull=True) | Q(starts_on__lte=today))
+            .filter(Q(ends_on__isnull=True) | Q(ends_on__gte=today))
+            .select_related("from_party", "to_party")
+            .order_by(F("starts_on").asc(nulls_first=True), "id")
+        )
+        overview["relationships"] = {
+            "total": relationships.count(),
+            "items": list(relationships[:5]),
+        }
+
+    if include_interactions:
+        from .models import Interaction
+
+        interactions = Interaction.objects.filter(
+            workspace=workspace,
+            participant_links__workspace=workspace,
+            participant_links__party=person,
+            participant_links__archived_at__isnull=True,
+        ).order_by("-occurred_at", "id")
+        overview["interactions"] = {
+            "total": interactions.count(),
+            "items": list(interactions[:5]),
+        }
+
+    if include_commitments:
+        from .models import Commitment
+
+        commitments = (
+            Commitment.objects.filter(
+                workspace=workspace,
+                person_links__workspace=workspace,
+                person_links__person=person,
+                person_links__archived_at__isnull=True,
+                status="open",
+            )
+            .select_related("owed_by", "owed_to")
+            .order_by(F("due_on").asc(nulls_last=True), "created_at", "id")
+        )
+        overview["commitments"] = {
+            "total": commitments.count(),
+            "items": list(commitments[:5]),
+        }
+    return overview
+
+
 def validate_note(body, source):
     errors = {}
     for field, value, limit in (("body", body, 20000), ("source", source, 500)):

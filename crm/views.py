@@ -250,6 +250,7 @@ def person_detail(request, person_id):
     context["relationships_enabled"] = settings.RELATIONSHIPS_ENABLED
     context["interactions_enabled"] = settings.INTERACTIONS_ENABLED
     context["commitments_enabled"] = settings.COMMITMENTS_ENABLED
+    context["person_overview_enabled"] = settings.PERSON_OVERVIEW_ENABLED
     allowed_query = set()
     if settings.RELATIONSHIPS_ENABLED:
         allowed_query.update({"relationships_page", "relationships_ended_page"})
@@ -295,6 +296,14 @@ def person_detail(request, person_id):
             )
         except ValidationError:
             return HttpResponse("Invalid commitment page", status=400)
+    if settings.PERSON_OVERVIEW_ENABLED:
+        context["person_overview"] = services.person_overview(
+            request.user,
+            person,
+            include_relationships=settings.RELATIONSHIPS_ENABLED,
+            include_interactions=settings.INTERACTIONS_ENABLED,
+            include_commitments=settings.COMMITMENTS_ENABLED,
+        )
     return render(request, "person_detail.html", context)
 
 

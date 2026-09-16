@@ -1,5 +1,5 @@
 <section aria-labelledby="interactions-heading">
-<h2 id="interactions-heading">Interactions</h2>
+<h2 id="interactions-heading"{% if person_overview %} tabindex="-1"{% endif %}>Interactions</h2>
 {% for interaction in interactions %}
 <article>
 <h3>{{ interaction.occurred_at }}</h3>

@@ -260,3 +260,42 @@ To prove independent flags and hidden source content, disable
 `INTERACTIONS_ENABLED`, keep `COMMITMENTS_ENABLED=true`, recreate the app, and read
 the same proof with `--interactions off --commitments on`. Cycle commitments off and
 on around that read to prove that data survives the runtime kill switch.
+
+## Stage 7 person overview acceptance
+
+`PERSON_OVERVIEW_ENABLED` defaults to `false` in the application, Compose, CI, and
+the example environment. Stage 7 has no migration. Set the flag to `true` and recreate
+the application process. The overview composes only the separately enabled
+relationship, interaction, and commitment sections. Disabling it restores the Stage 6
+person layout while the owning workflows and their records remain available.
+
+With all relationship workflow flags enabled, run the operator smoke against the exact
+tested image:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --party-directory on --relationships on --interactions on --commitments on \
+  --person-overview on --record-file /tmp/person-overview-proof.json
+```
+
+The smoke creates generic CRM data for three fictional situations: a Realtor preparing
+for individual priorities within one household, a Pre-Sales Engineer working with
+technical and business contacts after an employment change, and an Attorney tracking a
+promised client update. Each situation records a shared interaction, creates and
+completes a commitment, checks the completed history, and verifies its owning records.
+
+For the runtime kill switch, set `PERSON_OVERVIEW_ENABLED=false`, recreate the app,
+and rerun with the same arguments using `--person-overview off` and the proof file as
+the `--read-file` value. Reenable the flag and use `--read-file` again. Repeat
+the enabled read after application replacement. After restoring the database, point the
+app at the restored database, recreate it, and run:
+
+```sh
+uv run python scripts/browser_smoke.py --base-url "$COMMON_THREAD_URL" \
+  --party-directory on --relationships on --interactions on --commitments on \
+  --person-overview on --read-file /tmp/person-overview-proof.json
+```
+
+The committed browser and container gates perform the off/on cycle, application
+replacement, restored-database read, and AMD64/ARM64 checks. These commands describe
+acceptance evidence; deployment is a separate operator action.

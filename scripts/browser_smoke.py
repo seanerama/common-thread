@@ -192,7 +192,7 @@ def party_directory_read(page, base_url, record):
         expect(
             page.get_by_role("heading", name=party["display_name"], exact=True)
         ).to_be_visible()
-        expect(page.get_by_text("Client", exact=False)).to_be_visible()
+        expect(page.get_by_text("Client", exact=False).first).to_be_visible()
 
 
 def party_directory_on(page, base_url, record, read_only):
@@ -295,7 +295,9 @@ def relationships_read(page, base_url, record, party_directory):
     # Both the ended employment and its replacement remain visible together.
     page.goto(base_url + record["path"])
     for relationship in relationships.values():
-        expect(page.get_by_text(relationship["role"], exact=False)).to_be_visible()
+        expect(
+            page.get_by_text(relationship["role"], exact=False).first
+        ).to_be_visible()
     if party_directory == "on":
         endpoint_roles = (
             ("organization", relationships["ended_employment"]["role"]),
@@ -427,9 +429,9 @@ def interactions_read(page, base_url, record):
     # Current membership follows the replacement, while the removed participant is
     # still available through the shared record's correction history.
     page.goto(base_url + record["path"])
-    expect(page.get_by_text(interaction["body"], exact=True)).to_be_visible()
+    expect(page.get_by_text(interaction["body"], exact=True).first).to_be_visible()
     page.goto(base_url + record["third_person"]["path"])
-    expect(page.get_by_text(interaction["body"], exact=True)).to_be_visible()
+    expect(page.get_by_text(interaction["body"], exact=True).first).to_be_visible()
     page.goto(base_url + record["second_person"]["path"])
     expect(page.get_by_text(interaction["body"], exact=True)).to_have_count(0)
 
@@ -526,9 +528,13 @@ def commitments_read(page, base_url, record):
         )
     ).to_be_visible()
     page.goto(base_url + record["path"])
-    expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
+    expect(
+        page.get_by_text(commitment["description"], exact=False).first
+    ).to_be_visible()
     page.goto(base_url + record["third_person"]["path"])
-    expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
+    expect(
+        page.get_by_text(commitment["description"], exact=False).first
+    ).to_be_visible()
     page.goto(f"{base_url}/commitments/")
     expect(page.get_by_text(commitment["description"], exact=False)).to_be_visible()
 
@@ -577,6 +583,225 @@ def commitments_off(page, base_url, record):
     page.goto(base_url + record["path"])
 
 
+def _create_scenario_interaction(page, base_url, participants, body):
+    page.goto(f"{base_url}/interactions/new/")
+    page.locator('[name="occurred_at"]').fill("2026-09-16T14:00+00:00")
+    page.locator('[name="body"]').fill(body)
+    for participant in participants:
+        page.locator(
+            f'[name="participant_ids"][value="{_party_id(participant["path"])}"]'
+        ).check()
+    page.get_by_role("button", name="Save interaction", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/interactions/[0-9a-f-]+/")
+    )
+    return page.url.removeprefix(base_url)
+
+
+def _create_completed_scenario_commitment(
+    page, base_url, person, counterpart, source_path, description
+):
+    page.goto(f"{base_url}/commitments/new/")
+    person_id = _party_id(person["path"])
+    counterpart_id = _party_id(counterpart["path"])
+    page.locator('[name="owed_by_party_id"]').select_option(person_id)
+    page.locator('[name="owed_to_party_id"]').select_option(counterpart_id)
+    page.locator(f'[name="person_ids"][value="{person_id}"]').check()
+    page.locator('[name="source_interaction_id"]').select_option(_party_id(source_path))
+    page.locator('[name="description"]').fill(description)
+    page.locator('[name="due_on"]').fill("2026-12-31")
+    page.get_by_role("button", name="Save commitment", exact=True).click()
+    expect(page).to_have_url(
+        re.compile(re.escape(base_url) + r"/commitments/[0-9a-f-]+/")
+    )
+    commitment_path = page.url.removeprefix(base_url)
+
+    # The open summary and owning record agree before completion.
+    page.goto(base_url + person["path"])
+    expect(page.get_by_role("heading", name="Conversation preparation")).to_be_visible()
+    expect(page.get_by_text(description, exact=True).first).to_be_visible()
+    page.goto(base_url + commitment_path)
+    page.get_by_role("button", name="Complete commitment", exact=True).click()
+    expect(page.get_by_text("Status completed", exact=False)).to_be_visible()
+
+    # Completion remains available in the full paginated section as history.
+    page.goto(base_url + person["path"])
+    expect(page.get_by_text(description, exact=True)).to_have_count(0)
+    page.locator('[name="commitments_status"]').select_option("completed")
+    page.get_by_role("button", name="Filter person commitments", exact=True).click()
+    expect(page.get_by_text(description, exact=False)).to_be_visible()
+    return commitment_path
+
+
+def person_overview_read(page, base_url, record):
+    for scenario in record.get("overview_scenarios", []):
+        page.goto(base_url + scenario["person"]["path"])
+        expect(
+            page.get_by_role("heading", name="Conversation preparation")
+        ).to_be_visible()
+        expect(
+            page.get_by_text(scenario["interaction_body"], exact=True).first
+        ).to_be_visible()
+        expect(
+            page.get_by_text(scenario["relationship_role"], exact=False).first
+        ).to_be_visible()
+        page.locator('[name="commitments_status"]').select_option("completed")
+        page.get_by_role("button", name="Filter person commitments", exact=True).click()
+        expect(page.get_by_text(scenario["description"], exact=False)).to_be_visible()
+        page.goto(base_url + scenario["commitment_path"])
+        expect(page.get_by_text("Status completed", exact=False)).to_be_visible()
+        for relationship in scenario["relationships"]:
+            page.goto(base_url + relationship["path"])
+            expect(
+                page.get_by_text(relationship["role"], exact=False).first
+            ).to_be_visible()
+
+
+def person_overview_on(
+    page, base_url, record, read_only, relationships, interactions, commitments
+):
+    page.goto(base_url + record["path"])
+    expect(page.get_by_role("heading", name="Conversation preparation")).to_be_visible()
+    for enabled, heading in (
+        (relationships, "Current relationships"),
+        (interactions, "Recent interactions"),
+        (commitments, "Open commitments"),
+    ):
+        expect(page.get_by_role("heading", name=re.compile(heading))).to_have_count(
+            1 if enabled == "on" else 0
+        )
+    if not all(value == "on" for value in (relationships, interactions, commitments)):
+        return
+    if read_only:
+        person_overview_read(page, base_url, record)
+        return
+
+    scenario_specs = [
+        (
+            "Realtor",
+            "household_member",
+            "Individual household priorities",
+            "Shared conversation about each household member's priorities",
+            "Send the household options discussed",
+            record["household"],
+        ),
+        (
+            "Pre-Sales Engineer",
+            "employment",
+            "Technical contact after changed employment",
+            "Shared technical and business contact discovery",
+            "Deliver the promised technical follow-up",
+            record["second_organization"],
+        ),
+        (
+            "Attorney",
+            "referral",
+            "Client update contact",
+            "Conversation about the attorney's promised update",
+            "Provide the promised matter update",
+            record["organization"],
+        ),
+    ]
+    scenarios = []
+    for profession, kind, role, body, description, endpoint in scenario_specs:
+        person = _create_smoke_person(
+            page, base_url, f"Fictional {profession} Contact {uuid4().hex[:8]}"
+        )
+        counterpart = _create_smoke_person(
+            page, base_url, f"Fictional {profession} Colleague {uuid4().hex[:8]}"
+        )
+        scenario_relationships = []
+        if profession == "Pre-Sales Engineer":
+            prior_relationship_path = _create_relationship(
+                page,
+                base_url,
+                person["path"],
+                record["organization"]["path"],
+                "employment",
+                "Former technical contact",
+                "2025-01-01",
+            )
+            page.locator('form[action$="/close/"] [name="ends_on"]').fill("2025-12-31")
+            page.get_by_role("button", name="Close relationship", exact=True).click()
+            scenario_relationships.append(
+                {
+                    "path": prior_relationship_path,
+                    "role": "Former technical contact",
+                }
+            )
+        relationship_path = _create_relationship(
+            page,
+            base_url,
+            person["path"],
+            endpoint["path"],
+            kind,
+            role,
+            "2026-01-01",
+        )
+        scenario_relationships.append({"path": relationship_path, "role": role})
+        if profession == "Realtor":
+            counterpart_relationship = _create_relationship(
+                page,
+                base_url,
+                counterpart["path"],
+                endpoint["path"],
+                "household_member",
+                "Second individual's distinct priorities",
+                "2026-01-01",
+            )
+            scenario_relationships.append(
+                {
+                    "path": counterpart_relationship,
+                    "role": "Second individual's distinct priorities",
+                }
+            )
+        elif profession == "Pre-Sales Engineer":
+            business_relationship = _create_relationship(
+                page,
+                base_url,
+                counterpart["path"],
+                endpoint["path"],
+                "employment",
+                "Business contact",
+                "2026-01-01",
+            )
+            scenario_relationships.append(
+                {"path": business_relationship, "role": "Business contact"}
+            )
+        interaction_path = _create_scenario_interaction(
+            page, base_url, (person, counterpart), body
+        )
+        commitment_path = _create_completed_scenario_commitment(
+            page,
+            base_url,
+            person,
+            counterpart,
+            interaction_path,
+            description,
+        )
+        scenarios.append(
+            {
+                "person": person,
+                "counterpart": counterpart,
+                "relationships": scenario_relationships,
+                "relationship_role": role,
+                "interaction_path": interaction_path,
+                "interaction_body": body,
+                "commitment_path": commitment_path,
+                "description": description,
+            }
+        )
+    record["overview_scenarios"] = scenarios
+    person_overview_read(page, base_url, record)
+
+
+def person_overview_off(page, base_url, record):
+    page.goto(base_url + record["path"])
+    expect(page.get_by_role("heading", name="Conversation preparation")).to_have_count(
+        0
+    )
+
+
 def smoke(
     base_url,
     username,
@@ -589,6 +814,7 @@ def smoke(
     relationships="off",
     interactions="off",
     commitments="off",
+    person_overview="off",
 ):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
@@ -666,6 +892,18 @@ def smoke(
                 commitments_on(page, base_url, record, bool(read_file), interactions)
             else:
                 commitments_off(page, base_url, record)
+            if person_overview == "on":
+                person_overview_on(
+                    page,
+                    base_url,
+                    record,
+                    bool(read_file),
+                    relationships,
+                    interactions,
+                    commitments,
+                )
+            else:
+                person_overview_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
             print(
@@ -674,6 +912,7 @@ def smoke(
                 f"relationships {relationships}"
                 f"; interactions {interactions}"
                 f"; commitments {commitments}"
+                f"; person overview {person_overview}"
             )
         finally:
             browser.close()
@@ -693,6 +932,7 @@ def main():
     parser.add_argument("--relationships", choices=("on", "off"), default="off")
     parser.add_argument("--interactions", choices=("on", "off"), default="off")
     parser.add_argument("--commitments", choices=("on", "off"), default="off")
+    parser.add_argument("--person-overview", choices=("on", "off"), default="off")
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -709,6 +949,7 @@ def main():
         args.relationships,
         args.interactions,
         args.commitments,
+        args.person_overview,
     )
 
 

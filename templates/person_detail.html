@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{{ person.display_name }}</h1>
+{% if person_overview_enabled %}{% include "person_overview.html" %}{% endif %}
 {% if management_enabled %}
 <p>{% if person.is_client %}Client{% else %}Not a client{% endif %}</p>
 {% if person.archived_at %}

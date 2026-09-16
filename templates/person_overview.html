@@ -1,0 +1,31 @@
+<section aria-labelledby="preparation-heading">
+<h2 id="preparation-heading">Conversation preparation</h2>
+{% if person.archived_at %}<p role="status"><strong>Archived person.</strong> Prior relationship records remain available for reference.</p>{% endif %}
+<nav aria-label="Preparation sections"><ul>
+{% if relationships_enabled %}<li><a href="#overview-relationships">Current relationships</a></li>{% endif %}
+{% if interactions_enabled %}<li><a href="#overview-interactions">Recent interactions</a></li>{% endif %}
+{% if commitments_enabled %}<li><a href="#overview-commitments">Open commitments</a></li>{% endif %}
+</ul></nav>
+{% if not relationships_enabled and not interactions_enabled and not commitments_enabled %}<p>No preparation sections are enabled.</p>{% endif %}
+
+{% if relationships_enabled %}<section aria-labelledby="overview-relationships">
+<h3 id="overview-relationships">Current relationships <span aria-label="{{ person_overview.relationships.total }} total">({{ person_overview.relationships.total }})</span></h3>
+<ul>{% for relationship in person_overview.relationships.items %}<li><a href="/relationships/{{ relationship.id }}/">{{ relationship.from_party.display_name }} → {{ relationship.to_party.display_name }}</a> · {{ relationship.kind }}{% if relationship.role %} · {{ relationship.role }}{% endif %}</li>{% empty %}<li>No current relationships.</li>{% endfor %}</ul>
+{% if person_overview.relationships.total > 5 %}<p>Showing 5 of {{ person_overview.relationships.total }} current relationships.</p>{% endif %}
+<p><a href="?relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}{% if interactions_enabled %}&amp;interactions_page={{ interactions.number }}{% endif %}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}#relationships-heading">View all relationships</a></p>
+</section>{% endif %}
+
+{% if interactions_enabled %}<section aria-labelledby="overview-interactions">
+<h3 id="overview-interactions">Recent interactions <span aria-label="{{ person_overview.interactions.total }} total">({{ person_overview.interactions.total }})</span></h3>
+{% for interaction in person_overview.interactions.items %}<article><h4><a href="/interactions/{{ interaction.id }}/">{{ interaction.occurred_at }}</a></h4><div style="white-space: pre-wrap">{{ interaction.body|truncatechars:160 }}</div></article>{% empty %}<p>No interactions yet.</p>{% endfor %}
+{% if person_overview.interactions.total > 5 %}<p>Showing 5 of {{ person_overview.interactions.total }} interactions.</p>{% endif %}
+<p><a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}interactions_page={{ interactions.number }}{% if commitments_enabled %}&amp;commitments_page={{ commitments.number }}&amp;commitments_status={{ commitments_status }}{% endif %}#interactions-heading">View all interactions</a></p>
+</section>{% endif %}
+
+{% if commitments_enabled %}<section aria-labelledby="overview-commitments">
+<h3 id="overview-commitments">Open commitments <span aria-label="{{ person_overview.commitments.total }} total">({{ person_overview.commitments.total }})</span></h3>
+<ul>{% for commitment in person_overview.commitments.items %}<li><a href="/commitments/{{ commitment.id }}/">{{ commitment.description|truncatechars:100 }}</a> · {{ commitment.owed_by.display_name }} owes {{ commitment.owed_to.display_name }}{% if commitment.due_on %} · due {{ commitment.due_on }}{% else %} · undated{% endif %}</li>{% empty %}<li>No open commitments.</li>{% endfor %}</ul>
+{% if person_overview.commitments.total > 5 %}<p>Showing 5 of {{ person_overview.commitments.total }} open commitments.</p>{% endif %}
+<p><a href="?{% if relationships_enabled %}relationships_page={{ relationships.number }}&amp;relationships_ended_page={{ ended_relationships.number }}&amp;{% endif %}{% if interactions_enabled %}interactions_page={{ interactions.number }}&amp;{% endif %}commitments_page={{ commitments.number }}&amp;commitments_status=open#commitments-heading">View all open commitments</a> · <a href="/commitments/?status=open">Open commitment work list</a></p>
+</section>{% endif %}
+</section>
