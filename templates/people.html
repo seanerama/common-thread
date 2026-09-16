@@ -1,1 +1,25 @@
-{% extends "base.html" %}{% block content %}<h1>People</h1><a href="/people/new/">Add person</a><ul>{% for person in people %}<li><a href="/people/{{ person.id }}/">{{ person.display_name }}</a></li>{% empty %}<li>No people yet. Add someone to get started.</li>{% endfor %}</ul>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<h1>People</h1>
+<a href="/people/new/">Add person</a>
+{% if management_enabled %}
+<form method="get" action="/people/">
+  <label for="q">Search</label><input id="q" name="q" value="{{ q }}" maxlength="200" type="search">
+  <label for="archived">Archived people</label>
+  <select id="archived" name="archived">
+    <option value="exclude" {% if archived == 'exclude' %}selected{% endif %}>Exclude archived</option>
+    <option value="include" {% if archived == 'include' %}selected{% endif %}>Include archived</option>
+    <option value="only" {% if archived == 'only' %}selected{% endif %}>Archived only</option>
+  </select>
+  <button type="submit">Search</button>
+</form>
+{% endif %}
+{% if query_error %}<p class="error" role="alert">{{ query_error }}</p>{% else %}
+<ul>{% for person in people %}<li><a href="/people/{{ person.id }}/">{{ person.display_name }}</a>{% if management_enabled %}{% if person.is_client %} — Client{% endif %}{% if person.archived_at %} — Archived{% endif %}{% endif %}</li>{% empty %}<li>{% if management_enabled %}No people match this search.{% else %}No people yet. Add someone to get started.{% endif %}</li>{% endfor %}</ul>
+{% if page_obj %}<nav aria-label="Search pages">
+{% if page_obj.has_previous %}<a href="?q={{ q|urlencode }}&amp;archived={{ archived|urlencode }}&amp;page={{ page_obj.previous_page_number }}">Previous</a>{% endif %}
+<span>Page {{ page_obj.number }}</span>
+{% if page_obj.has_next %}<a href="?q={{ q|urlencode }}&amp;archived={{ archived|urlencode }}&amp;page={{ page_obj.next_page_number }}">Next</a>{% endif %}
+</nav>{% endif %}
+{% endif %}
+{% endblock %}

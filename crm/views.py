@@ -4,6 +4,7 @@ import logging
 from datetime import timedelta
 from functools import wraps
 
+from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
 from django.core.exceptions import PermissionDenied, RequestDataTooBig, ValidationError
 from django.db import connection, transaction
@@ -14,6 +15,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from . import services
+from .forms import ContactPointForm, PersonForm, VersionForm
 from .models import LoginAttempt
 
 
@@ -159,8 +161,41 @@ def logout_view(request):
 @require_http_methods(["GET"])
 @authorized
 def people(request):
+    if not settings.PEOPLE_MANAGEMENT_ENABLED:
+        return render(
+            request, "people.html", {"people": services.list_people(request.user)}
+        )
+    query = request.GET.get("q", "")
+    archived = request.GET.get("archived", "exclude")
+    try:
+        page = services.search_people(
+            request.user, q=query, archived=archived, page=request.GET.get("page", "1")
+        )
+    except ValidationError:
+        return render(
+            request,
+            "people.html",
+            {
+                "management_enabled": True,
+                "q": query,
+                "archived": archived,
+                "query_error": (
+                    "Enter a search of up to 200 characters, a valid archive "
+                    "filter, and a positive page number."
+                ),
+            },
+            status=400,
+        )
     return render(
-        request, "people.html", {"people": services.list_people(request.user)}
+        request,
+        "people.html",
+        {
+            "people": page,
+            "page_obj": page,
+            "management_enabled": True,
+            "q": query,
+            "archived": archived,
+        },
     )
 
 
@@ -187,11 +222,16 @@ def person_new(request):
 @require_http_methods(["GET"])
 @authorized
 def person_detail(request, person_id):
-    return render(
-        request,
-        "person_detail.html",
-        {"person": services.get_person(request.user, person_id)},
-    )
+    person = services.get_person(request.user, person_id)
+    context = {
+        "person": person,
+        "management_enabled": settings.PEOPLE_MANAGEMENT_ENABLED,
+    }
+    if settings.PEOPLE_MANAGEMENT_ENABLED:
+        context["contact_points"] = services.list_contact_points(
+            request.user, person_id
+        )
+    return render(request, "person_detail.html", context)
 
 
 @require_http_methods(["POST"])
@@ -249,3 +289,154 @@ def ready(request):
         )
         return JsonResponse({"status": "not_ready"}, status=503)
     return JsonResponse({"status": "ready"})
+
+
+def management_enabled(view):
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not settings.PEOPLE_MANAGEMENT_ENABLED:
+            raise Http404
+        return view(request, *args, **kwargs)
+
+    return wrapped
+
+
+def workflow_form(request, person, form, title, save, submit_label="Save changes"):
+    status = 200
+    conflict = False
+    if request.method == "POST" and form.is_valid():
+        try:
+            save(form.cleaned_data)
+        except services.Conflict:
+            status = 409
+            conflict = True
+            form.add_error(
+                None,
+                "This record changed. Reload and review the latest version before "
+                "saving again. Your submitted values are shown below.",
+            )
+        except ValidationError as exc:
+            if hasattr(exc, "message_dict"):
+                for field, messages in exc.message_dict.items():
+                    form.add_error(field if field in form.fields else None, messages)
+            else:
+                form.add_error(None, exc)
+        else:
+            return redirect303(f"/people/{person.id}/")
+    return render(
+        request,
+        "person_form.html",
+        {
+            "person": person,
+            "form": form,
+            "title": title,
+            "submit_label": submit_label,
+            "conflict": conflict,
+        },
+        status=status,
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@management_enabled
+def person_edit(request, person_id):
+    person = services.get_person(request.user, person_id)
+    form = PersonForm(
+        request.POST if request.method == "POST" else None,
+        initial={
+            "display_name": person.display_name,
+            "is_client": person.is_client,
+            "expected_version": person.version,
+        },
+    )
+    return workflow_form(
+        request,
+        person,
+        form,
+        "Edit person",
+        lambda data: services.update_person(request.user, person_id, **data),
+        "Save person",
+    )
+
+
+@require_http_methods(["POST"])
+@authorized
+@management_enabled
+def person_archive(request, person_id, archived=True):
+    person = services.get_person(request.user, person_id)
+    title = "Archive person" if archived else "Restore person"
+    return workflow_form(
+        request,
+        person,
+        VersionForm(request.POST),
+        title,
+        lambda data: services.set_person_archived(
+            request.user, person_id, archived=archived, **data
+        ),
+        title,
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@management_enabled
+def contact_point_new(request, person_id):
+    person = services.get_person(request.user, person_id)
+    form = ContactPointForm(
+        request.POST if request.method == "POST" else None,
+        initial={"expected_version": person.version, "kind": "email"},
+    )
+    return workflow_form(
+        request,
+        person,
+        form,
+        "Add contact point",
+        lambda data: services.create_contact_point(request.user, person_id, **data),
+        "Save contact",
+    )
+
+
+@require_http_methods(["GET", "POST"])
+@authorized
+@management_enabled
+def contact_point_edit(request, person_id, point_id):
+    person = services.get_person(request.user, person_id)
+    point = services.get_contact_point(request.user, person_id, point_id)
+    form = ContactPointForm(
+        request.POST if request.method == "POST" else None,
+        initial={
+            "expected_version": point.version,
+            "kind": point.kind,
+            "value": point.value,
+            "label": point.label or "",
+        },
+    )
+    return workflow_form(
+        request,
+        person,
+        form,
+        "Edit contact point",
+        lambda data: services.update_contact_point(
+            request.user, person_id, point_id, **data
+        ),
+        "Save contact",
+    )
+
+
+@require_http_methods(["POST"])
+@authorized
+@management_enabled
+def contact_point_archive(request, person_id, point_id):
+    person = services.get_person(request.user, person_id)
+    services.get_contact_point(request.user, person_id, point_id)
+    return workflow_form(
+        request,
+        person,
+        VersionForm(request.POST),
+        "Archive contact point",
+        lambda data: services.archive_contact_point(
+            request.user, person_id, point_id, **data
+        ),
+        "Archive contact point",
+    )

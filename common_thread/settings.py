@@ -46,6 +46,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "crm.middleware.PersonApiInputMiddleware",
+    "crm.middleware.PeopleManagementGateMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
 ]
 ROOT_URLCONF = "common_thread.urls"
@@ -104,3 +105,8 @@ LOGGING = {
     },
     "root": {"handlers": ["stdout"], "level": "INFO"},
 }
+
+# Environment changes take effect after restarting the application processes.
+PEOPLE_MANAGEMENT_ENABLED = (
+    os.environ.get("PEOPLE_MANAGEMENT_ENABLED", "false").lower() == "true"
+)

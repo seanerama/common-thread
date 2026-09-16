@@ -10,11 +10,126 @@ from uuid import uuid4
 from playwright.sync_api import expect, sync_playwright
 
 
-def smoke(base_url, username, password, record_file=None, read_file=None):
+def management_off(page, base_url, record):
+    for name in ("Edit person", "Add contact"):
+        expect(page.get_by_role("link", name=name, exact=True)).to_have_count(0)
+    for name in ("Archive person", "Restore person"):
+        expect(page.get_by_role("button", name=name, exact=True)).to_have_count(0)
+    for suffix in ("edit/", "contact-points/new/"):
+        response = page.goto(base_url + record["path"] + suffix)
+        assert response.status == 404
+    if "contact_edit_path" in record:
+        response = page.goto(base_url + record["contact_edit_path"])
+        assert response.status == 404
+    page.goto(f"{base_url}/people/")
+    expect(page.locator('[name="q"]')).to_have_count(0)
+    expect(page.locator('[name="archived"]')).to_have_count(0)
+    page.goto(base_url + record["path"])
+
+
+def management_on(page, base_url, record):
+    person_url = base_url + record["path"]
+    page.get_by_role("link", name="Edit person", exact=True).click()
+    stale = page.context.new_page()
+    try:
+        stale.goto(page.url)
+        record["display_name"] += " Updated"
+        page.get_by_label("Name", exact=True).fill(record["display_name"])
+        page.get_by_label("Client", exact=True).check()
+        page.get_by_role("button", name="Save person", exact=True).click()
+        expect(page).to_have_url(person_url)
+        stale.get_by_label("Name", exact=True).fill("Fictional stale overwrite")
+        with stale.expect_navigation() as conflict:
+            stale.get_by_role("button", name="Save person", exact=True).click()
+        assert conflict.value.status == 409
+        expect(stale.get_by_role("alert")).to_contain_text(re.compile("reload", re.I))
+        expect(stale.get_by_label("Name", exact=True)).to_have_value(
+            "Fictional stale overwrite"
+        )
+        page.reload()
+        expect(
+            page.get_by_role("heading", name=record["display_name"], exact=True)
+        ).to_be_visible()
+        page.get_by_role("link", name="Edit person", exact=True).click()
+        expect(page.get_by_label("Client", exact=True)).to_be_checked()
+        page.goto(person_url)
+        page.get_by_role("link", name="Add contact", exact=True).click()
+        page.get_by_label("Kind", exact=True).select_option("email")
+        page.get_by_label("Value", exact=True).fill(
+            f"fictional-{uuid4().hex}@example.invalid"
+        )
+        page.get_by_label("Label", exact=True).fill("Smoke contact")
+        page.get_by_role("button", name="Save contact", exact=True).click()
+        page.get_by_role("link", name="Edit contact", exact=True).click()
+        record["contact_edit_path"] = page.url.removeprefix(base_url)
+        stale.goto(page.url)
+        record["contact_value"] = f"fictional-updated-{uuid4().hex}@example.invalid"
+        page.get_by_label("Value", exact=True).fill(record["contact_value"])
+        page.get_by_role("button", name="Save contact", exact=True).click()
+        stale.get_by_label("Value", exact=True).fill("stale@example.invalid")
+        with stale.expect_navigation() as conflict:
+            stale.get_by_role("button", name="Save contact", exact=True).click()
+        assert conflict.value.status == 409
+        expect(stale.get_by_role("alert")).to_contain_text(re.compile("reload", re.I))
+        expect(stale.get_by_label("Value", exact=True)).to_have_value(
+            "stale@example.invalid"
+        )
+        page.reload()
+        expect(
+            page.locator("li").filter(has_text=record["contact_value"])
+        ).to_be_visible()
+        page.goto(f"{base_url}/people/")
+        page.get_by_label("Search", exact=True).fill(record["contact_value"])
+        page.get_by_role("button", name="Search", exact=True).click()
+        page.get_by_role("link", name=record["display_name"], exact=True).click()
+        expect(page).to_have_url(person_url)
+        page.get_by_role("button", name="Archive person", exact=True).click()
+        page.goto(f"{base_url}/people/?q={record['contact_value']}")
+        expect(
+            page.get_by_role("link", name=record["display_name"], exact=True)
+        ).to_have_count(0)
+        page.locator('[name="archived"]').select_option("only")
+        page.get_by_role("button", name="Search", exact=True).click()
+        page.get_by_role("link", name=record["display_name"], exact=True).click()
+        expect(
+            page.locator("li").filter(has_text=record["contact_value"])
+        ).to_be_visible()
+        page.get_by_role("button", name="Restore person", exact=True).click()
+        page.goto(f"{base_url}/people/?q={record['contact_value']}")
+        page.get_by_role("link", name=record["display_name"], exact=True).click()
+        expect(page).to_have_url(person_url)
+        # Keep the edited contact for restart proof; archive a separate contact.
+        page.get_by_role("link", name="Add contact", exact=True).click()
+        discarded_value = f"fictional-archived-{uuid4().hex}@example.invalid"
+        page.get_by_label("Kind", exact=True).select_option("email")
+        page.get_by_label("Value", exact=True).fill(discarded_value)
+        page.get_by_role("button", name="Save contact", exact=True).click()
+        page.locator("li").filter(has_text=discarded_value).get_by_role(
+            "button", name="Archive contact", exact=True
+        ).click()
+        expect(page.locator("li").filter(has_text=discarded_value)).to_have_count(0)
+        page.goto(f"{base_url}/people/?q={discarded_value}")
+        expect(
+            page.get_by_role("link", name=record["display_name"], exact=True)
+        ).to_have_count(0)
+        page.goto(person_url)
+    finally:
+        stale.close()
+
+
+def smoke(
+    base_url,
+    username,
+    password,
+    record_file=None,
+    read_file=None,
+    people_management="off",
+):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         try:
-            page = browser.new_page()
+            context = browser.new_context()
+            page = context.new_page()
             response = page.goto(f"{base_url}/health/ready/")
             assert response.status == 200 and response.json() == {"status": "ready"}
             page.goto(f"{base_url}/login/")
@@ -44,9 +159,22 @@ def smoke(base_url, username, password, record_file=None, read_file=None):
             expect(
                 page.get_by_role("heading", name=record["display_name"], exact=True)
             ).to_be_visible()
+            if people_management == "on":
+                if read_file:
+                    expect(
+                        page.get_by_role("link", name="Edit person", exact=True)
+                    ).to_be_visible()
+                    if "contact_value" in record:
+                        expect(
+                            page.locator("li").filter(has_text=record["contact_value"])
+                        ).to_be_visible()
+                else:
+                    management_on(page, base_url, record)
+            else:
+                management_off(page, base_url, record)
             if record_file:
                 Path(record_file).write_text(json.dumps(record) + "\n")
-            print("Browser smoke passed: authenticated persistent person read")
+            print(f"Browser smoke passed: people management {people_management}")
         finally:
             browser.close()
 
@@ -54,6 +182,12 @@ def smoke(base_url, username, password, record_file=None, read_file=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
+    parser.add_argument(
+        "--people-management",
+        choices=("on", "off"),
+        default="off",
+        help="Assert flag state; on exercises Stage 1 workflows",
+    )
     files = parser.add_mutually_exclusive_group()
     files.add_argument("--record-file")
     files.add_argument("--read-file")
@@ -64,6 +198,7 @@ def main():
         os.environ["SMOKE_PASSWORD"],
         args.record_file,
         args.read_file,
+        args.people_management,
     )
 
 
